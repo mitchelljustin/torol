@@ -14,7 +14,7 @@ class Parser(
 
     fun parse() = program()
 
-    private fun program(): Expr {
+    private fun program(): Expr.Sequence {
         mark("program")
         val exprs = ArrayList<Expr>()
         while (!present(EOF)) {
@@ -53,12 +53,13 @@ class Parser(
 
     private fun apply(): Expr {
         mark("apply")
-        val expr = Expr.Apply(primary(), arrayListOf())
+        val values = arrayListOf<Expr>()
+        val target = primary()
 
         while (!present(EQUAL, EQUAL_GREATER, RPAREN, DEDENT, INDENT, NEWLINE, RBRAC, EOF)) {
             mark("appending to apply: value")
             val value = primary()
-            expr.values.add(value)
+            values.add(value)
         }
         if (startOfSequence()) {
             mark("appending to apply: final sequence")
@@ -73,20 +74,16 @@ class Parser(
                         "cannot both have label statements and value statements"
                     )
                 labelStmts.forEach { stmt ->
-                    val (target, values) = stmt as Expr.Apply
-                    expr.values.add(target)
-                    expr.values.add(values.first())
+                    val (label, labelValues) = stmt as Expr.Apply
+                    values.add(label)
+                    values.add(labelValues.first())
                 }
             } else {
-                expr.values.add(finalSequence)
+                values.add(finalSequence)
             }
         }
 
-        if (expr.values.isEmpty()) {
-            returning("apply", expr.target)
-            return expr.target
-        }
-
+        val expr = Expr.Apply(target, values)
         returning("apply", expr)
         return expr
     }

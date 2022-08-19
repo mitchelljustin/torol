@@ -4,12 +4,15 @@ if cond
 =>
     |
         !push4
-        !:else
+        !:condFalse
         {cond}
         !bez
         {thenBody}
         !push4
         !:done
-        else:
+        !jump
+        condFalse:
         {elseBody}
         done:
+
+if (lt a b) then: a else: b

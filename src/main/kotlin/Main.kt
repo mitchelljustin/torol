@@ -32,8 +32,10 @@ class CLI : CliktCommand() {
         if (verbose) println("----------\n$source\n----------")
         val tokens = Scanner(source).scan()
         if (verbose) println("## ${tokens.joinToString(" ")}")
-        val program = Parser(tokens).parse()
-        if (verbose) println("|| $program")
+        val sequence = Parser(tokens).parse()
+        if (verbose) println("|| $sequence")
+        val expanded = MacroEngine(sequence).expandAll()
+        if (verbose) println("~~ $expanded")
         Unit
     } catch (exc: Exception) {
         println("!! ${exc::class.simpleName} ${exc.message}")
