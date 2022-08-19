@@ -1,0 +1,9 @@
+if cond
+    then: thenBody
+    else: elseBody
+=>
+    ()
+
+f a =
+    b = mul a a
+    add a b

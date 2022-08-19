@@ -1,0 +1,52 @@
+# !op means builtin, symbols are resolved
+
+opImm4 op symbol =>
+    |
+        !push4
+        !{symbol}
+        {op}
+
+bez = opImm4 !bez
+bnz = opImm4 !bnz
+jmp = opImm4 !jump
+
+if cond :then ifBody =>
+    |
+        {cond}
+        bez :condFalse
+        {ifBody}
+        condFalse:
+
+if cond :then ifBody :else elseBody =>
+    |
+        {cond}
+        bez :condFalse
+        {ifBody}
+        jmp :done
+        condFalse:
+        {elseBody}
+        done:
+
+
+if (lt a b)
+    then
+        println a
+    else
+        println b
+
+if (lt a b)
+    { then { println a } }
+    { else { println b } }
+
+if (lt a b)
+    { then; println a }
+    { else; println b }
+
+
+if cond :then thenBody :else elseBody =>
+    ..
+
+if cond { :then thenBody } { :else elseBody } =>
+    ..
+
+if (lt a b) then a else b
