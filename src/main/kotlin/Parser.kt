@@ -55,7 +55,7 @@ class Parser(
         mark("apply")
         val expr = Expr.Apply(primary(), arrayListOf())
 
-        while (!present(EQUAL, EQUAL_GREATER, RPAREN, INDENT, NEWLINE, EOF)) {
+        while (!present(EQUAL, EQUAL_GREATER, RPAREN, DEDENT, INDENT, NEWLINE, RBRAC, EOF)) {
             mark("appending to apply: value")
             val value = primary()
             expr.values.add(value)
@@ -97,8 +97,11 @@ class Parser(
             present(IDENT) -> ident()
             present(STRING, NUMBER, SYMBOL) -> literal()
             present(INSTRUCTION) -> instruction()
+            present(LABELSUB) -> labelSub()
             present(LPAREN) -> grouping()
+            present(LBRAC) -> unquote()
             present(LABEL) -> label()
+            present(PIPE) -> quote()
             startOfSequence() -> sequence()
             else -> throw parseError("primary", "illegal primary expression")
         }
@@ -106,6 +109,22 @@ class Parser(
         return expr
     }
 
+    private fun unquote(): Expr {
+        mark("unquote")
+        consume(LBRAC, where = "to start unquote")
+        val expr = assignment()
+        consume(RBRAC, where = "to end unquote")
+        returning("unquote", expr)
+        return Expr.Unquote(expr)
+    }
+
+    private fun quote(): Expr {
+        mark("quote")
+        consume(PIPE, where = "before quote")
+        val expr = assignment()
+        returning("quote", expr)
+        return Expr.Quote(expr)
+    }
 
     private fun startOfSequence() = present(NEWLINE) && nextToken?.type == INDENT
 
@@ -136,14 +155,17 @@ class Parser(
         return expr
     }
 
+    private fun labelSub() =
+        Expr.LabelSub(consume(where = "in labelSub()").value as String)
+
     private fun label() =
-        Expr.Label(consume(where = "in label()").literal as String)
+        Expr.Label(consume(where = "in label()").value as String)
 
     private fun literal() =
-        Expr.Literal(consume(where = "in literal()").literal!!)
+        Expr.Literal(consume(where = "in literal()").value!!)
 
     private fun instruction() =
-        Expr.Instruction(consume(where = "in instruction()").lexeme.substring(1))
+        Expr.Instruction(consume(where = "in instruction()").value as String)
 
     private fun ident() =
         Expr.Ident(consume(IDENT, where = "in ident()").lexeme)

@@ -2,8 +2,14 @@ if cond
     then: thenBody
     else: elseBody
 =>
-    ()
-
-f a =
-    b = mul a a
-    add a b
+    |
+        !push4
+        !:else
+        {cond}
+        !bez
+        {thenBody}
+        !push4
+        !:done
+        else:
+        {elseBody}
+        done:

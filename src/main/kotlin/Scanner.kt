@@ -57,7 +57,7 @@ class Scanner(
             ':' -> symbol()
             '\n' -> newline()
             ' ' -> {}
-            '!' -> instruction()
+            '!' -> assembly()
             in SYMBOLS_DOUBLE -> doubleSymbol(char)
             in SYMBOLS_SINGLE -> addToken(SYMBOLS_SINGLE[char]!!)
             in LETTERS -> identifierOrLabel()
@@ -78,9 +78,12 @@ class Scanner(
         }
     }
 
-    private fun instruction() {
+    private fun assembly() {
+        val type = if (checkAndConsume(':')) LABELSUB else INSTRUCTION
+
         consumeAll(ALPHANUMERICS)
-        addToken(INSTRUCTION)
+        val value = lexeme.substring(if (type == LABELSUB) 2 else 1)
+        addToken(type, value)
     }
 
     private fun newline() {
@@ -105,7 +108,7 @@ class Scanner(
 
     private fun symbol() {
         consumeAll(ALPHANUMERICS)
-        addToken(SYMBOL, lexeme.substring(1))
+        addToken(SYMBOL, value = lexeme.substring(1))
     }
 
     private fun string() {
@@ -120,7 +123,7 @@ class Scanner(
         // TODO: support floats
         consumeAll(DIGITS)
 
-        addToken(NUMBER, literal = lexeme.toInt())
+        addToken(NUMBER, value = lexeme.toInt())
     }
 
     private fun identifierOrLabel() {
@@ -153,8 +156,8 @@ class Scanner(
         current++
     }
 
-    private fun addToken(type: Token.Type, literal: Any? = null) {
-        tokens.add(Token(type, lexeme, curPos, literal))
+    private fun addToken(type: Token.Type, value: Any? = null) {
+        tokens.add(Token(type, lexeme, curPos, value))
     }
 
     private fun scanError(where: String, expected: String) =

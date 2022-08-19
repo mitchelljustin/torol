@@ -27,6 +27,10 @@ open class Expr : AST() {
         override fun toString() = "Ident($name)"
     }
 
+    data class LabelSub(val name: String) : Expr() {
+        override fun toString() = "LabelSub($name)"
+    }
+
     data class Label(val name: String) : Expr() {
         override fun toString() = "Label($name)"
     }

@@ -1,4 +1,4 @@
-class Token(val type: Type, val lexeme: String, val pos: Pos, val literal: Any? = null) {
+class Token(val type: Type, val lexeme: String, val pos: Pos, val value: Any? = null) {
     data class Pos(val line: Int, val column: Int) {
         override fun toString() = "$line:$column"
     }
@@ -16,7 +16,9 @@ class Token(val type: Type, val lexeme: String, val pos: Pos, val literal: Any? 
 
         LABEL,
 
-        IDENT, INSTRUCTION, STRING, NUMBER, SYMBOL,
+        IDENT, STRING, NUMBER, SYMBOL,
+
+        INSTRUCTION, LABELSUB,
 
         EOF;
     }
