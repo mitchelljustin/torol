@@ -33,7 +33,7 @@ class Scanner(
             .filter { it.match?.length == 1 }
             .associateBy { it.match!!.first() }
 
-        const val SPACES_PER_INDENT = 4
+        const val SPACES_PER_INDENT = 2
     }
 
     fun scan(): ArrayList<Token> {
@@ -54,7 +54,6 @@ class Scanner(
                 while (curChar != '\n') advance()
             }
             '"' -> string()
-            ':' -> symbol()
             '\n' -> newline()
             ' ' -> {}
             '!' -> assembly()
@@ -79,11 +78,8 @@ class Scanner(
     }
 
     private fun assembly() {
-        val type = if (checkAndConsume(':')) LABELSUB else INSTRUCTION
-
         consumeAll(ALPHANUMERICS)
-        val value = lexeme.substring(if (type == LABELSUB) 2 else 1)
-        addToken(type, value)
+        addToken(DIRECTIVE, value = lexeme.substring(1))
     }
 
     private fun newline() {
@@ -104,11 +100,6 @@ class Scanner(
             else -> {}
         }
         currentIndent = indentLevel
-    }
-
-    private fun symbol() {
-        consumeAll(ALPHANUMERICS)
-        addToken(SYMBOL, value = lexeme.substring(1))
     }
 
     private fun string() {

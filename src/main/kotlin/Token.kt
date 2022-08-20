@@ -16,9 +16,9 @@ class Token(val type: Type, val lexeme: String, val pos: Pos, val value: Any? = 
 
         LABEL,
 
-        IDENT, STRING, NUMBER, SYMBOL,
+        IDENT, STRING, NUMBER,
 
-        INSTRUCTION, LABELSUB,
+        DIRECTIVE,
 
         EOF;
     }

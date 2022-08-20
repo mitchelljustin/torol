@@ -1,7 +1,7 @@
 open class Expr {
     companion object {
         fun isLeaf(expr: Expr) = when (expr) {
-            is Nil, is Ident, is LabelSub, is Label, is Literal, is Instruction -> true
+            is Nil, is Ident, is Label, is Literal, is Directive -> true
             else -> false
         }
     }
@@ -14,19 +14,15 @@ open class Expr {
         override fun toString() = "Ident($name)"
     }
 
-    data class LabelSub(val name: String) : Expr() {
-        override fun toString() = "LabelSub($name)"
-    }
-
     data class Label(val name: String) : Expr() {
         override fun toString() = "Label($name)"
     }
 
-    data class Literal(val x: Any) : Expr() {
-        override fun toString() = "Literal($x)"
+    data class Literal(val literal: Any) : Expr() {
+        override fun toString() = "Literal($literal)"
     }
 
-    data class Instruction(val op: String) : Expr()
+    data class Directive(val name: String) : Expr()
 
 
     data class Sequence(val exprs: List<Expr>) : Expr() {
@@ -51,9 +47,9 @@ open class Expr {
 
     data class Grouping(val expr: Expr) : Expr()
 
-    data class Quote(val q: Expr) : Expr()
+    data class Quote(val quoted: Expr) : Expr()
 
-    data class Unquote(val u: Expr) : Expr()
+    data class Unquote(val body: Expr) : Expr()
 
 }
 

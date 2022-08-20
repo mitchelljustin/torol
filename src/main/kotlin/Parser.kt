@@ -18,8 +18,9 @@ class Parser(
         mark("program")
         val exprs = ArrayList<Expr>()
         while (!present(EOF)) {
+            consumeAny(NEWLINE, DEDENT, INDENT, where = "before statement in program")
             exprs.add(assignment())
-            consumeAny(NEWLINE, where = "after statement in program")
+            consumeAny(NEWLINE, DEDENT, INDENT, where = "after statement in program")
         }
         val expr = Expr.Sequence(exprs)
         returning("program", expr)
@@ -92,9 +93,8 @@ class Parser(
         mark("primary")
         val expr = when {
             present(IDENT) -> ident()
-            present(STRING, NUMBER, SYMBOL) -> literal()
-            present(INSTRUCTION) -> instruction()
-            present(LABELSUB) -> labelSub()
+            present(STRING, NUMBER) -> literal()
+            present(DIRECTIVE) -> directive()
             present(LPAREN) -> grouping()
             present(LBRAC) -> unquote()
             present(LABEL) -> label()
@@ -152,17 +152,14 @@ class Parser(
         return expr
     }
 
-    private fun labelSub() =
-        Expr.LabelSub(consume(where = "in labelSub()").value as String)
-
     private fun label() =
         Expr.Label(consume(where = "in label()").value as String)
 
     private fun literal() =
         Expr.Literal(consume(where = "in literal()").value!!)
 
-    private fun instruction() =
-        Expr.Instruction(consume(where = "in instruction()").value as String)
+    private fun directive() =
+        Expr.Directive(consume(where = "in directive()").value as String)
 
     private fun ident() =
         Expr.Ident(consume(IDENT, where = "in ident()").lexeme)

@@ -40,6 +40,7 @@ data class Pattern(val terms: List<Match>) {
 }
 
 data class MacroKey(val name: String, val pattern: Pattern)
+data class Macro(val key: MacroKey, val substitution: Expr)
 
 class MacroEngine(
     private val sequence: Expr.Sequence,
@@ -47,7 +48,7 @@ class MacroEngine(
     class MacroError(where: String, message: String, expr: Expr) :
         Exception("[$where] $message: $expr")
 
-    private val macros = HashMap<MacroKey, Pair<MacroKey, Expr>>()
+    private val macros = HashMap<MacroKey, Macro>()
 
     fun expandAll(): Expr.Sequence = Expr.Sequence(sequence.exprs.map(::expand))
 
@@ -70,7 +71,8 @@ class MacroEngine(
                 val macro = findMacro(key)
                 if (macro != null) {
                     val (foundKey, substitution) = macro
-                    evalSubstitution(substitution, foundKey.pattern, expr.values)
+                    val binding = foundKey.pattern.bind(expr.values)
+                    substitute(substitution, binding)
                 } else expr
             } else expr
         }
@@ -89,22 +91,21 @@ class MacroEngine(
             else ->
                 throw MacroError("defineMacro", "target must be Apply or Ident", target)
         }
-        macros[key] = Pair(key, expr.value)
+        macros[key] = Macro(key, expr.value)
     }
 
-    private fun evalSubstitution(substitution: Expr, pattern: Pattern, values: List<Expr>): Expr {
+    private fun substitute(substitution: Expr, binding: Map<String, Expr>): Expr {
         val quote = findQuote(substitution)
             ?: throw MacroError("evalSubstitution", "could not find quote in substitution", substitution)
-        val binding = pattern.bind(values)
-        return subUnquotes(quote.q, binding)
+        return subUnquotes(quote.quoted, binding)
     }
 
     private fun subUnquotes(expr: Expr, binding: Map<String, Expr>): Expr = when {
         expr is Expr.Unquote
-                && expr.u is Expr.Apply
-                && expr.u.target is Expr.Ident
-                && expr.u.values.isEmpty() -> {
-            val name = expr.u.target.name
+                && expr.body is Expr.Apply
+                && expr.body.target is Expr.Ident
+                && expr.body.values.isEmpty() -> {
+            val name = expr.body.target.name
             val toSub = binding[name] ?: throw MacroError("subUnquotes", "no expr to substitute for '$name'", expr)
             toSub
         }
@@ -121,8 +122,8 @@ class MacroEngine(
     }
 
     private fun findQuote(expr: Expr): Expr.Quote? = when (expr) {
-        is Expr.Apply -> findQuote(expr.target)
         is Expr.Quote -> expr
+        is Expr.Apply -> findQuote(expr.target)
         is Expr.Sequence -> expr.exprs.firstNotNullOf(::findQuote)
         else -> null
     }

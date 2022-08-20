@@ -1,70 +1,58 @@
+import ISA.EnvCall
+import ISA.Instruction
+import ISA.decode
+import ISA.hex
+
 typealias Word = Int
 
-private fun createExceptionMessage(ip: Int, inst: Machine.Instruction?, message: String): String {
-    val loc = ip.toString(16).padStart(8, '0')
+
+private fun createExceptionMessage(ip: Int, inst: Instruction?, message: String): String {
+    val loc = ip.hex(8)
     val inst = if (inst != null) " $inst" else ""
-    return "[at 0x$loc$inst] $message"
+    return "[at $loc$inst] $message"
 }
 
+
 class Machine(
-    private val code: Array<UByte>,
+    private val code: List<UByte>,
 ) {
-    class Instruction(
-        val name: String,
-        val opcode: UByte,
-        val execute: (Machine) -> Unit,
-    ) {
-        override fun toString() = "!$name"
-    }
-
-
     class ExecutionError(message: String, inst: Instruction?, ip: Int) :
         Exception(createExceptionMessage(ip, inst, message))
 
+    @OptIn(ExperimentalUnsignedTypes::class)
+    class Memory(
+        private val code: List<UByte>,
+    ) {
+        class MemoryException(message: String) : Exception(message)
+
+        companion object {
+            const val HEAP_SIZE = 1024 * 1024
+
+            const val CODE_START = 0x10_0000
+            const val STACK_START = 0x20_0000
+            const val HEAP_START = 0x30_0000
+            const val HEAP_END = HEAP_START + HEAP_SIZE
+        }
+
+        val heap = ArrayList<UByte>(HEAP_SIZE)
+        val stack = ArrayList<Word>(STACK_START)
+    }
+
     private var ip = 0
-    private val stack = ArrayList<Word>()
+    private var isRunning = false
+    private val mem = Memory(code)
     private val curInst: Instruction?
         get() {
             val inst = code.getOrNull(ip) ?: return null
             return decode(inst)
         }
 
-    companion object {
-        val ISA = ArrayList<Instruction>()
-
-        private fun define(name: String, execute: (Machine) -> Unit) {
-            ISA.add(
-                Instruction(name, opcode = ISA.size.toUByte(), execute)
-            )
+    fun run() {
+        isRunning = true
+        while (isRunning) {
+            val inst = curInst ?: throw executionError("instruction is null")
+            inst.execute(this)
         }
-
-        private fun makePush(size: Int): (Machine) -> Unit =
-            { machine ->
-                val bytes = (0 until size).map { machine.advance() }
-                val toPush = bytes.reversed().fold(0) { acc, byte ->
-                    (acc shl 8) + byte.toInt()
-                }
-                machine.push(toPush)
-            }
-
-        init {
-            define("err") { throw it.executionError("illegal instruction") }
-            define("push1", makePush(1))
-            define("push2", makePush(2))
-            define("push3", makePush(3))
-            define("push4", makePush(4))
-            define("add") { it.alterTwo(Int::plus) }
-            define("sub") { it.alterTwo(Int::minus) }
-            define("mul") { it.alterTwo(Int::times) }
-            define("div") { it.alterTwo(Int::div) }
-            define("bez") { machine -> machine.branch { it == 0 } }
-            define("bnz") { machine -> machine.branch { it != 0 } }
-            define("jump") { machine -> machine.jump(machine.pop()) }
-            define("link") { machine -> machine.link() }
-            define("jal") { machine -> val target = machine.pop(); machine.link(); machine.jump(target) }
-        }
-
-        fun decode(inst: UByte): Instruction = ISA[inst.toInt()]
     }
 
     fun executionError(message: String) = ExecutionError(message, curInst, ip)
@@ -86,15 +74,27 @@ class Machine(
         ip = target
     }
 
-    fun push(x: Word) = stack.add(x)
-    fun pop(): Word = stack.removeLastOrNull() ?: throw executionError("popped from empty stack")
+    fun ecall() {
+        val callNo = pop()
+        when (EnvCall.values().getOrNull(callNo)) {
+            EnvCall.Invalid ->
+                throw executionError("invalid ecall")
+            EnvCall.Exit ->
+                isRunning = false
+            null ->
+                throw executionError("no such ecall: $callNo")
+        }
+    }
+
+    fun push(x: Word) = mem.stack.add(x)
+    fun pop(): Word = mem.stack.removeLastOrNull() ?: throw executionError("popped from empty stack")
     fun alter(transform: (Word) -> Word) {
-        if (stack.size == 0) throw executionError("altering empty stack")
-        stack[stack.lastIndex] = transform(stack.last())
+        if (mem.stack.size == 0) throw executionError("altering empty stack")
+        mem.stack[mem.stack.lastIndex] = transform(mem.stack.last())
     }
 
     fun alterTwo(transform: (Word, Word) -> Word) {
-        if (stack.size < 2) throw executionError("altering two on stack of less than two")
+        if (mem.stack.size < 2) throw executionError("altering two on stack of less than two")
         val top = pop()
         alter { sec -> transform(top, sec) }
     }

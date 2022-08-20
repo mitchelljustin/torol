@@ -36,7 +36,9 @@ class CLI : CliktCommand() {
         if (verbose) println("|| $sequence")
         val expanded = MacroEngine(sequence).expandAll()
         if (verbose) println("~~ $expanded")
-        Unit
+        val code = Compiler(expanded).compile()
+        val machine = Machine(code)
+        machine.run()
     } catch (exc: Exception) {
         println("!! ${exc::class.simpleName} ${exc.message}")
     }

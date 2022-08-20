@@ -1,18 +1,30 @@
 if cond
-    then: thenBody
-    else: elseBody
+  then: thenBody
+  else: elseBody
 =>
-    |
-        !push4
-        !:condFalse
-        {cond}
-        !bez
-        {thenBody}
-        !push4
-        !:done
-        !jump
-        condFalse:
-        {elseBody}
-        done:
+  |
+    !pushWord ipRel: condFalse
+    {cond}
+    !bez
+    {thenBody}
+    !pushWord ipRel: done
+    !jump
+    condFalse:
+    {elseBody}
+    done:
 
-if (lt a b) then: a else: b
+if (lt a b)
+  then: a
+  else: b
+
+
+defBinary op: op =>
+  |
+    !push local: a
+    !push local: b
+    !{op}
+
+add a b =
+  !push local: a
+  !push local: b
+  !add
