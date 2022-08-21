@@ -1,12 +1,24 @@
 op_push1 => 0x01
+op_push4 => 0x04
 op_ecall => 0x13
 callno_print => 0x02
+callno_exit => 0x01
+
 push1 x =>
   !op_push1
   !{x}
 
-"hello"
+push4 x =>
+  !op_push4
+  !{x}
+
+push4 0x01020304
 push1 callno_print
-!ecall
+!op_ecall
+!op_push1
+!0
+!op_push1
+!callno_exit
+!op_ecall
 
 

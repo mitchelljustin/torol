@@ -7,6 +7,13 @@ class Parser(
     class ParseError(where: String, message: String, token: Token) :
         Exception("[$where at ${token.pos}] $message ($token)")
 
+    companion object {
+        private val AssignOperators = setOf(EQUAL, EQUAL_GREATER)
+        private val UserOperators = setOf(RARROW, LARROW, PLUS, MINUS, STAR, SLASH)
+        private val Operators = AssignOperators + UserOperators
+        private val Literals = setOf(STRING, NUMBER)
+    }
+
     private var current = 0
     private val curToken get() = tokens[current]
     private val prevToken get() = tokens[current - 1]
@@ -17,9 +24,10 @@ class Parser(
     private fun program(): Expr.Sequence {
         mark("program")
         val exprs = ArrayList<Expr>()
+        consumeAny(NEWLINE, DEDENT, INDENT, where = "before program")
         while (!present(EOF)) {
             consumeAny(NEWLINE, DEDENT, INDENT, where = "before statement in program")
-            exprs.add(assignment())
+            exprs.add(binary())
             consumeAny(NEWLINE, DEDENT, INDENT, where = "after statement in program")
         }
         val expr = Expr.Sequence(exprs)
@@ -37,14 +45,14 @@ class Parser(
         report("in $where: returning $what")
     }
 
-    private fun assignment(): Expr {
+    private fun binary(): Expr {
         mark("assignment")
         var expr = directive()
 
-        if (present(EQUAL, EQUAL_GREATER)) {
-            val operator = consume(where = "in assignment (operator)")
-            val value = apply()
-            expr = Expr.Assignment(expr, operator, value)
+        while (present(Operators)) {
+            val operator = consume(where = "in binary (operator)")
+            val value = directive()
+            expr = Expr.Binary(expr, operator, value)
         }
 
         returning("assignment", expr)
@@ -63,11 +71,11 @@ class Parser(
         return expr
     }
 
-    private fun apply(): Expr.Apply {
+    private fun apply(): Expr {
         mark("apply")
         val terms = arrayListOf(primary())
 
-        while (!present(EQUAL, EQUAL_GREATER, RPAREN, DEDENT, INDENT, NEWLINE, RBRAC, EOF)) {
+        while (!present(RPAREN, RBRAC, DEDENT, INDENT, NEWLINE, EOF, *Operators.toTypedArray())) {
             mark("appending to apply: primary")
             val term = primary()
             terms.add(term)
@@ -90,7 +98,7 @@ class Parser(
             } else terms.add(finalSequence)
         }
 
-        val expr = Expr.Apply(terms)
+        val expr = if (terms.size > 1) Expr.Apply(terms) else terms.first()
         returning("apply", expr)
         return expr
     }
@@ -99,12 +107,12 @@ class Parser(
         mark("primary")
         val expr = when {
             present(IDENT) -> ident()
-            present(OPERATOR) -> operator()
-            present(STRING, NUMBER) -> literal()
+            present(Literals) -> literal()
             present(LPAREN) -> grouping()
             present(LBRAC) -> unquote()
             present(LABEL) -> label()
             present(PIPE) -> quote()
+            present(STAR) -> multi()
             startOfSequence() -> sequence()
             else -> throw parseError("primary", "illegal primary expression")
         }
@@ -112,10 +120,16 @@ class Parser(
         return expr
     }
 
+    private fun multi(): Expr {
+        consume(STAR, where = "vararg()")
+        val body = primary()
+        return Expr.Multi(body)
+    }
+
     private fun unquote(): Expr {
         mark("unquote")
         consume(LBRAC, where = "to start unquote")
-        val expr = assignment()
+        val expr = binary()
         consume(RBRAC, where = "to end unquote")
         returning("unquote", expr)
         return Expr.Unquote(expr)
@@ -124,7 +138,7 @@ class Parser(
     private fun quote(): Expr {
         mark("quote")
         consume(PIPE, where = "before quote")
-        val expr = assignment()
+        val expr = binary()
         returning("quote", expr)
         return Expr.Quote(expr)
     }
@@ -136,7 +150,7 @@ class Parser(
         consume(LPAREN, where = "before parenthesis grouping")
         if (consumeMaybe(RPAREN))
             return Expr.Nil()
-        val expr = Expr.Grouping(assignment())
+        val expr = Expr.Grouping(binary())
         consume(RPAREN, where = "after parenthesis grouping")
         returning("grouping", expr)
         return expr
@@ -149,7 +163,7 @@ class Parser(
         val stmts = ArrayList<Expr>()
         while (!present(DEDENT)) {
             mark("appending statement to sequence")
-            stmts.add(assignment())
+            stmts.add(binary())
             consumeMaybe(NEWLINE, where = "after statement in sequence")
         }
         consume(DEDENT, where = "after sequence")
@@ -159,16 +173,13 @@ class Parser(
     }
 
     private fun label() =
-        Expr.Label(consume(where = "in label()").value as String)
+        Expr.Label(consume(LABEL, where = "label()").value as String)
 
     private fun literal() =
-        Expr.Literal(consume(where = "in literal()").value!!)
+        Expr.Literal(consume(Literals, where = "literal()").value!!)
 
     private fun ident() =
-        Expr.Ident(consume(IDENT, where = "in ident()").lexeme)
-
-    private fun operator() =
-        Expr.Operator(consume(OPERATOR, where = "in operator()").lexeme)
+        Expr.Ident(consume(IDENT, where = "ident()").lexeme)
 
     private fun consumeMaybe(vararg types: Token.Type, where: String = ""): Boolean {
         report("consuming maybe ${types.joinToString(" | ")} $where")
@@ -185,8 +196,9 @@ class Parser(
             consume(*types, where = where)
     }
 
-    private fun consume(vararg types: Token.Type, where: String = ""): Token {
-        if (types.isNotEmpty() && !present(*types))
+    private fun consume(vararg types: Token.Type, where: String = "") = consume(types.toSet(), where)
+    private fun consume(types: Set<Token.Type>, where: String = ""): Token {
+        if (types.isNotEmpty() && !present(types))
             throw parseError(where, "expected ${types.joinToString(" | ")}, got $curToken")
         report("consuming $current:$curToken $where")
         current++

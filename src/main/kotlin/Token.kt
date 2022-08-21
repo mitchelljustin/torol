@@ -8,12 +8,18 @@ class Token(val type: Type, val lexeme: String, val pos: Pos, val value: Any? = 
     enum class Type(val match: String? = null) {
         NEWLINE("\n"),
 
-        LPAREN("("), RPAREN(")"), LBRAC("{"), RBRAC("}"),
+        // grouping operators
+        LPAREN("("), RPAREN(")"), LBRAC("{"), RBRAC("}"), LSQUARE("["), RSQUARE("]"),
 
+        // special operators
+        PIPE("|"), BANG("!"), STAR("*"),
+
+        // assignment operators
         EQUAL("="), EQUAL_GREATER("=>"),
-        PIPE("|"), BANG("!"),
 
-        OPERATOR,
+        // user operators
+        RARROW("->"), LARROW("<-"),
+        PLUS("+"), MINUS("-"), SLASH("/"),
 
         INDENT, DEDENT,
 

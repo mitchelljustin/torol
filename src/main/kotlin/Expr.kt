@@ -6,17 +6,28 @@ open class Expr {
         }
 
         fun transform(expr: Expr, func: (Expr) -> Expr?): Expr {
+            fun recurse(expr: Expr) = transform(expr, func)
             fun modify(expr: Expr) = func(expr) ?: expr
             return when (expr) {
-                is Nil, is Ident, is Label, is Literal, is Operator,
+                is Nil,
+                is Ident,
+                is Label,
+                is Literal,
                 -> modify(expr)
-                is Sequence -> modify(Sequence(expr.exprs.map(::modify)))
-                is Assignment -> modify(Assignment(modify(expr.target), expr.operator, modify(expr.value)))
-                is Directive -> modify(Directive(modify(expr.body)))
-                is Apply -> modify(Apply(expr.terms.map(::modify)))
-                is Grouping -> modify(Grouping(modify(expr.body)))
-                is Quote -> modify(Quote(modify(expr.quoted)))
-                is Unquote -> modify(Unquote(modify(expr.body)))
+                is Sequence -> modify(Sequence(expr.exprs.map(::recurse)))
+                is Binary -> modify(
+                    Binary(
+                        recurse(expr.target),
+                        expr.operator,
+                        recurse(expr.value)
+                    )
+                )
+                is Multi -> modify(Multi(recurse(expr.body)))
+                is Directive -> modify(Directive(recurse(expr.body)))
+                is Apply -> modify(Apply(expr.terms.map(::recurse)))
+                is Grouping -> modify(Grouping(recurse(expr.body)))
+                is Quote -> modify(Quote(recurse(expr.body)))
+                is Unquote -> modify(Unquote(recurse(expr.body)))
                 else -> throw Exception("unsupported expr for transform(): $expr")
             }
         }
@@ -26,9 +37,7 @@ open class Expr {
         override fun toString() = "Nil"
     }
 
-    data class Operator(val operator: String) : Expr() {
-        override fun toString() = "Operator($operator)"
-    }
+    data class Multi(val body: Expr) : Expr()
 
     data class Ident(val name: String) : Expr() {
         override fun toString() = "Ident($name)"
@@ -50,7 +59,7 @@ open class Expr {
         }
     }
 
-    data class Assignment(val target: Expr, val operator: Token, val value: Expr) : Expr()
+    data class Binary(val target: Expr, val operator: Token, val value: Expr) : Expr()
 
     data class Directive(val body: Expr) : Expr()
 
@@ -66,7 +75,7 @@ open class Expr {
 
     data class Grouping(val body: Expr) : Expr()
 
-    data class Quote(val quoted: Expr) : Expr()
+    data class Quote(val body: Expr) : Expr()
 
     data class Unquote(val body: Expr) : Expr()
 

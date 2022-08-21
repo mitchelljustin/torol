@@ -1,8 +1,7 @@
-import ISA.EnvCall
-import ISA.Instruction
-import ISA.decode
-import ISA.hex
-import Memory.Companion.CODE_START
+import InstructionSet.EnvCall
+import InstructionSet.Instruction
+import InstructionSet.decode
+import InstructionSet.hex
 
 typealias Word = Int
 
@@ -14,34 +13,22 @@ private fun createExceptionMessage(ip: Int, inst: Instruction?, message: String)
 }
 
 
-class Memory(
-    private val code: List<UByte>,
-) {
-    class MemoryException(message: String) : Exception(message)
-
-    companion object {
-        const val HEAP_SIZE = 1024 * 1024
-
-        const val CODE_START = 0x10_0000
-        const val STACK_START = 0x20_0000
-        const val HEAP_START = 0x30_0000
-        const val HEAP_END = HEAP_START + HEAP_SIZE
-    }
-
-    val heap = ArrayList<UByte>(HEAP_SIZE)
-    val stack = ArrayList<Word>(STACK_START)
-}
-
 class Machine(
     private val code: List<UByte>,
 ) {
     class ExecutionError(message: String, inst: Instruction?, ip: Int) :
         Exception(createExceptionMessage(ip, inst, message))
 
+    companion object {
+        const val CODE_START = 0x00_000
+        const val STACK_START = 0x10_000
+        const val STACK_END = 0x20_000
+    }
 
+    private var exitCode: Word? = null
     private var ip = CODE_START
+    private val stack = ArrayList<Word>()
     private var isRunning = false
-    private val mem = Memory(code)
     private val curByte get() = code.getOrNull(ip)
     private val curInst: Instruction?
         get() {
@@ -53,6 +40,7 @@ class Machine(
         isRunning = true
         while (isRunning) {
             val inst = curInst ?: throw executionError("instruction is null")
+            ip++
             inst.execute(this)
         }
     }
@@ -81,8 +69,10 @@ class Machine(
         when (EnvCall.values().getOrNull(callNo)) {
             EnvCall.Invalid ->
                 throw executionError("invalid ecall")
-            EnvCall.Exit ->
+            EnvCall.Exit -> {
+                exitCode = pop()
                 isRunning = false
+            }
             EnvCall.Print -> {
                 val stringPtr = pop()
                 println(stringPtr)
@@ -93,15 +83,15 @@ class Machine(
         }
     }
 
-    fun push(x: Word) = mem.stack.add(x)
-    fun pop(): Word = mem.stack.removeLastOrNull() ?: throw executionError("popped from empty stack")
+    fun push(x: Word) = stack.add(x)
+    fun pop(): Word = stack.removeLastOrNull() ?: throw executionError("popped from empty stack")
     fun alter(transform: (Word) -> Word) {
-        if (mem.stack.size == 0) throw executionError("altering empty stack")
-        mem.stack[mem.stack.lastIndex] = transform(mem.stack.last())
+        if (stack.size == 0) throw executionError("altering empty stack")
+        stack[stack.lastIndex] = transform(stack.last())
     }
 
     fun alterTwo(transform: (Word, Word) -> Word) {
-        if (mem.stack.size < 2) throw executionError("altering two on stack of less than two")
+        if (stack.size < 2) throw executionError("altering two on stack of less than two")
         val top = pop()
         alter { sec -> transform(top, sec) }
     }

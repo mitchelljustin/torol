@@ -1,3 +1,1 @@
-match someExpr
-  [1 2 3] -> someResult
-  else:
+!one !two

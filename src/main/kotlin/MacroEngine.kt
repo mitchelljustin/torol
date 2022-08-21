@@ -11,7 +11,7 @@ open class Match {
 
 data class Pattern(val terms: List<Match>) {
     companion object {
-        fun empty() = Pattern(listOf())
+        val empty = Pattern(listOf())
 
         fun forDefinition(exprs: List<Expr>): Pattern = Pattern(
             exprs.map {
@@ -54,45 +54,36 @@ class MacroEngine(
 
     fun expandAll(): Expr.Sequence = Expr.Sequence(sequence.exprs.map(::expand))
 
-    private fun expand(expr: Expr): Expr = when (expr) {
-        is Expr.Assignment -> {
-            val expr = Expr.Assignment(
-                expand(expr.target),
-                expr.operator,
-                expand(expr.value),
-            )
-
-            if (expr.operator.type == EQUAL_GREATER) {
-                defineMacro(expr)
+    private fun expand(expr: Expr): Expr = Expr.transform(expr) { expr ->
+        when (expr) {
+            is Expr.Binary -> {
+                if (expr.operator.type == EQUAL_GREATER) {
+                    defineMacro(expr)
+                }
+                expr
             }
-            expr
-        }
-        is Expr.Ident -> {
-            val macro = findMacro(MacroKey(expr.name, Pattern.empty()))
-            macro?.substitution ?: expr
-        }
-        is Expr.Directive ->
-            Expr.Directive(expand(expr.body) as Expr.Apply)
-        is Expr.Apply -> {
-            val expr = Expr.Apply(listOf(expr.target) + expr.args.map(::expand))
-            if (expr.target is Expr.Ident) {
+            is Expr.Apply -> {
+                if (expr.target !is Expr.Ident) return@transform null
                 val key = MacroKey(expr.target.name, Pattern.forSearch(expr.args))
-                val macro = findMacro(key)
-                if (macro != null) {
-                    val (foundKey, substitution) = macro
-                    val binding = foundKey.pattern.bind(expr.args)
-                    substitute(substitution, binding)
-                } else expr
-            } else expr
+                val macro = findMacro(key) ?: return@transform null
+                val (foundKey, substitution) = macro
+                val binding = foundKey.pattern.bind(expr.args)
+                substitute(substitution, binding)
+            }
+            is Expr.Ident -> {
+                val key = MacroKey(expr.name, Pattern.empty)
+                val macro = findMacro(key) ?: return@transform null
+                macro.substitution
+            }
+            else -> null
         }
-        is Expr.Sequence -> Expr.Sequence(expr.exprs.map(::expand))
-        else -> expr
     }
 
     private fun findMacro(key: MacroKey) = macros[key]
 
-    private fun defineMacro(expr: Expr.Assignment) {
+    private fun defineMacro(expr: Expr.Binary) {
         val key = when (val target = expr.target) {
+            is Expr.Ident -> MacroKey(target.name, Pattern.empty)
             is Expr.Apply -> {
                 if (target.target !is Expr.Ident)
                     throw MacroError("defineMacro", "target must start with Ident", target.target)
@@ -101,37 +92,27 @@ class MacroEngine(
             else ->
                 throw MacroError("defineMacro", "target must be Apply or Ident", target)
         }
+        if (key in macros)
+            throw MacroError("defineMacro", "macro with key already exists: $key", expr)
         macros[key] = Macro(key, expr.value)
     }
 
     private fun substitute(substitution: Expr, binding: Map<String, Expr>): Expr {
-        val expr = findQuote(substitution)?.quoted ?: substitution
+        val expr = findQuote(substitution)?.body ?: substitution
 //            ?: throw MacroError("evalSubstitution", "could not find quote in substitution", substitution)
         return subUnquotes(expr, binding)
     }
 
-    private fun subUnquotes(expr: Expr, binding: Map<String, Expr>): Expr {
-        fun recurse(expr: Expr) = subUnquotes(expr, binding)
-        return when {
-            expr is Expr.Unquote
-                    && expr.body is Expr.Apply
-                    && expr.body.target is Expr.Ident
-                    && expr.body.args.isEmpty() -> {
-                val name = expr.body.target.name
+    private fun subUnquotes(expr: Expr, binding: Map<String, Expr>): Expr = Expr.transform(expr) { expr ->
+        when (expr) {
+            is Expr.Unquote -> {
+                if (expr.body !is Expr.Ident)
+                    throw MacroError("subUnquotes", "unquote body must be an Ident", expr.body)
+                val name = expr.body.name
                 val toSub = binding[name] ?: throw MacroError("subUnquotes", "no expr to substitute for '$name'", expr)
                 toSub
             }
-            expr is Expr.Assignment -> Expr.Assignment(
-                recurse(expr.target),
-                expr.operator,
-                recurse(expr.value),
-            )
-            expr is Expr.Apply -> Expr.Apply(expr.terms.map(::recurse))
-            expr is Expr.Grouping -> Expr.Grouping(recurse(expr.body))
-            expr is Expr.Sequence -> Expr.Sequence(expr.exprs.map(::recurse))
-            expr is Expr.Directive -> Expr.Directive(recurse(expr.body) as Expr.Apply)
-            Expr.isLeaf(expr) -> expr
-            else -> throw MacroError("subUnquotes", "illegal expr", expr)
+            else -> null
         }
     }
 
