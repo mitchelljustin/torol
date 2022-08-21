@@ -1,13 +1,33 @@
 open class Expr {
     companion object {
         fun isLeaf(expr: Expr) = when (expr) {
-            is Nil, is Ident, is Label, is Literal, is Directive -> true
+            is Nil, is Ident, is Label, is Literal -> true
             else -> false
+        }
+
+        fun transform(expr: Expr, func: (Expr) -> Expr?): Expr {
+            fun modify(expr: Expr) = func(expr) ?: expr
+            return when (expr) {
+                is Nil, is Ident, is Label, is Literal, is Operator,
+                -> modify(expr)
+                is Sequence -> modify(Sequence(expr.exprs.map(::modify)))
+                is Assignment -> modify(Assignment(modify(expr.target), expr.operator, modify(expr.value)))
+                is Directive -> modify(Directive(modify(expr.body)))
+                is Apply -> modify(Apply(expr.terms.map(::modify)))
+                is Grouping -> modify(Grouping(modify(expr.body)))
+                is Quote -> modify(Quote(modify(expr.quoted)))
+                is Unquote -> modify(Unquote(modify(expr.body)))
+                else -> throw Exception("unsupported expr for transform(): $expr")
+            }
         }
     }
 
     class Nil : Expr() {
         override fun toString() = "Nil"
+    }
+
+    data class Operator(val operator: String) : Expr() {
+        override fun toString() = "Operator($operator)"
     }
 
     data class Ident(val name: String) : Expr() {
@@ -22,8 +42,6 @@ open class Expr {
         override fun toString() = "Literal($literal)"
     }
 
-    data class Directive(val name: String) : Expr()
-
 
     data class Sequence(val exprs: List<Expr>) : Expr() {
         override fun toString(): String {
@@ -34,18 +52,19 @@ open class Expr {
 
     data class Assignment(val target: Expr, val operator: Token, val value: Expr) : Expr()
 
-    data class Apply(val target: Expr, val values: List<Expr>) : Expr() {
-        val terms get() = listOf(target) + values
+    data class Directive(val body: Expr) : Expr()
 
-        constructor(terms: List<Expr>) : this(terms.first(), terms.drop(1))
+    data class Apply(val terms: List<Expr>) : Expr() {
+        val target = terms.first()
+        val args = terms.drop(1)
 
         override fun toString(): String {
-            val inner = (listOf(target) + values).joinToString(", ")
+            val inner = terms.joinToString(", ")
             return "{$inner}"
         }
     }
 
-    data class Grouping(val expr: Expr) : Expr()
+    data class Grouping(val body: Expr) : Expr()
 
     data class Quote(val quoted: Expr) : Expr()
 

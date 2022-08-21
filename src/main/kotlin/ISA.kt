@@ -4,6 +4,7 @@ object ISA {
     enum class EnvCall(callNo: UByte) {
         Invalid(0x00u),
         Exit(0x01u),
+        Print(0x02u),
     }
 
     class Instruction(
@@ -23,25 +24,35 @@ object ISA {
         OpNameToInstruction[opName] = instruction
     }
 
-    private fun makePush(size: Int): (Machine) -> Unit =
+    private fun makePush(size: Int, signExtend: Boolean): (Machine) -> Unit =
         { machine ->
-            val UBytes = (0 until size).map { machine.advance() }
-            val toPush = UBytes.reversed().fold(0) { acc, UByte ->
-                (acc shl 8) + UByte.toInt()
+            val bytes = (0 until 4).map {
+                if (it < size)
+                    machine.advance()
+                else
+                    if (signExtend) 0xffu else 0x00u
+            }
+            val toPush = bytes.reversed().fold(0) { acc, byte ->
+                (acc shl 8) + byte.toInt()
             }
             machine.push(toPush)
         }
 
     init {
         define("err") { throw it.executionError("illegal instruction") }
-        define("push1", makePush(1))
-        define("push2", makePush(2))
-        define("push3", makePush(3))
-        define("push4", makePush(4))
+        define("push1", makePush(1, true))
+        define("push2", makePush(2, true))
+        define("push3", makePush(3, true))
+        define("push4", makePush(4, true))
+        define("push1u", makePush(1, false))
+        define("push2u", makePush(2, false))
+        define("push3u", makePush(3, false))
+        define("push4u", makePush(4, false))
         define("add") { it.alterTwo(Int::plus) }
         define("sub") { it.alterTwo(Int::minus) }
         define("mul") { it.alterTwo(Int::times) }
         define("div") { it.alterTwo(Int::div) }
+        define("neg") { it.alter(Int::unaryMinus) }
         define("bez") { machine -> machine.branch { it == 0 } }
         define("bnz") { machine -> machine.branch { it != 0 } }
         define("jump") { machine -> machine.jump(machine.pop()) }

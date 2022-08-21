@@ -39,7 +39,7 @@ class Parser(
 
     private fun assignment(): Expr {
         mark("assignment")
-        var expr = apply()
+        var expr = directive()
 
         if (present(EQUAL, EQUAL_GREATER)) {
             val operator = consume(where = "in assignment (operator)")
@@ -52,21 +52,31 @@ class Parser(
         return expr
     }
 
-    private fun apply(): Expr {
+    private fun directive(): Expr {
+        mark("directive")
+        val expr =
+            if (present(BANG)) {
+                consume(BANG, where = "before directive")
+                Expr.Directive(apply())
+            } else apply()
+        returning("directive", expr)
+        return expr
+    }
+
+    private fun apply(): Expr.Apply {
         mark("apply")
-        val values = arrayListOf<Expr>()
-        val target = primary()
+        val terms = arrayListOf(primary())
 
         while (!present(EQUAL, EQUAL_GREATER, RPAREN, DEDENT, INDENT, NEWLINE, RBRAC, EOF)) {
-            mark("appending to apply: value")
-            val value = primary()
-            values.add(value)
+            mark("appending to apply: primary")
+            val term = primary()
+            terms.add(term)
         }
         if (startOfSequence()) {
             mark("appending to apply: final sequence")
             val finalSequence = sequence()
             val (labelStmts, valueStmts) = finalSequence.exprs.partition { stmt ->
-                stmt is Expr.Apply && stmt.target is Expr.Label && stmt.values.size == 1
+                stmt is Expr.Apply && stmt.target is Expr.Label && stmt.terms.size == 2
             }
             if (labelStmts.isNotEmpty()) {
                 if (valueStmts.isNotEmpty())
@@ -74,17 +84,13 @@ class Parser(
                         "apply final sequence",
                         "cannot both have label statements and value statements"
                     )
-                labelStmts.forEach { stmt ->
-                    val (label, labelValues) = stmt as Expr.Apply
-                    values.add(label)
-                    values.add(labelValues.first())
+                labelStmts.forEach {
+                    terms += (it as Expr.Apply).terms // adds "label: value"
                 }
-            } else {
-                values.add(finalSequence)
-            }
+            } else terms.add(finalSequence)
         }
 
-        val expr = Expr.Apply(target, values)
+        val expr = Expr.Apply(terms)
         returning("apply", expr)
         return expr
     }
@@ -93,8 +99,8 @@ class Parser(
         mark("primary")
         val expr = when {
             present(IDENT) -> ident()
+            present(OPERATOR) -> operator()
             present(STRING, NUMBER) -> literal()
-            present(DIRECTIVE) -> directive()
             present(LPAREN) -> grouping()
             present(LBRAC) -> unquote()
             present(LABEL) -> label()
@@ -158,11 +164,11 @@ class Parser(
     private fun literal() =
         Expr.Literal(consume(where = "in literal()").value!!)
 
-    private fun directive() =
-        Expr.Directive(consume(where = "in directive()").value as String)
-
     private fun ident() =
         Expr.Ident(consume(IDENT, where = "in ident()").lexeme)
+
+    private fun operator() =
+        Expr.Operator(consume(OPERATOR, where = "in operator()").lexeme)
 
     private fun consumeMaybe(vararg types: Token.Type, where: String = ""): Boolean {
         report("consuming maybe ${types.joinToString(" | ")} $where")

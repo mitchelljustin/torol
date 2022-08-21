@@ -3,12 +3,13 @@ if cond
   else: elseBody
 =>
   |
-    !pushWord condFalse
+    !push ipRel: condFalse
     {cond}
     !bez
     {thenBody}
-    !pushWord done
+    !push ipRel: done
     !jump
     condFalse:
     {elseBody}
     done:
+

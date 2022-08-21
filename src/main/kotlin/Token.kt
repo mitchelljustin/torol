@@ -3,6 +3,7 @@ class Token(val type: Type, val lexeme: String, val pos: Pos, val value: Any? = 
         override fun toString() = "$line:$column"
     }
 
+
     @Suppress("unused")
     enum class Type(val match: String? = null) {
         NEWLINE("\n"),
@@ -10,7 +11,9 @@ class Token(val type: Type, val lexeme: String, val pos: Pos, val value: Any? = 
         LPAREN("("), RPAREN(")"), LBRAC("{"), RBRAC("}"),
 
         EQUAL("="), EQUAL_GREATER("=>"),
-        PIPE("|"),
+        PIPE("|"), BANG("!"),
+
+        OPERATOR,
 
         INDENT, DEDENT,
 
@@ -18,9 +21,11 @@ class Token(val type: Type, val lexeme: String, val pos: Pos, val value: Any? = 
 
         IDENT, STRING, NUMBER,
 
-        DIRECTIVE,
-
         EOF;
+
+        companion object {
+            val OPERATORS = setOf("-", "+", "/", "*")
+        }
     }
 
     override fun toString() = "$type(${lexeme.trim()})"

@@ -39,7 +39,7 @@ class CLI : CliktCommand() {
         val code = Compiler(expanded).compile()
         val machine = Machine(code)
         machine.run()
-    } catch (exc: Exception) {
+    } catch (exc: Error) {
         println("!! ${exc::class.simpleName} ${exc.message}")
     }
 }

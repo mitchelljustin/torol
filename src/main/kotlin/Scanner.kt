@@ -33,6 +33,7 @@ class Scanner(
             .filter { it.match?.length == 1 }
             .associateBy { it.match!!.first() }
 
+
         const val SPACES_PER_INDENT = 2
     }
 
@@ -56,7 +57,6 @@ class Scanner(
             '"' -> string()
             '\n' -> newline()
             ' ' -> {}
-            '!' -> assembly()
             in SYMBOLS_DOUBLE -> doubleSymbol(char)
             in SYMBOLS_SINGLE -> addToken(SYMBOLS_SINGLE[char]!!)
             in LETTERS -> identifierOrLabel()
@@ -75,11 +75,6 @@ class Scanner(
             char in SYMBOLS_SINGLE -> addToken(SYMBOLS_SINGLE[char]!!)
             else -> throw scanError("doubleSymbol()", "a valid one or two character symbol")
         }
-    }
-
-    private fun assembly() {
-        consumeAll(ALPHANUMERICS)
-        addToken(DIRECTIVE, value = lexeme.substring(1))
     }
 
     private fun newline() {
@@ -106,15 +101,23 @@ class Scanner(
         while (!isAtEnd && curChar != '"') advance()
         if (!checkAndConsume('"'))
             throw scanError("string()", "'\"' to terminate string")
-        val literal = lexeme.slice(1 until lexeme.length)
+        val literal = lexeme.slice(1 until lexeme.length - 1)
         addToken(STRING, literal)
     }
 
     private fun number() {
-        // TODO: support floats
-        consumeAll(DIGITS)
+        val value = when {
+            prevChar == '0' && checkAndConsume('x') -> {
+                consumeAll(DIGITS)
+                lexeme.substring(2).toInt(16)
+            }
+            else -> {
+                consumeAll(DIGITS)
+                lexeme.toInt()
+            }
+        }
 
-        addToken(NUMBER, value = lexeme.toInt())
+        addToken(NUMBER, value)
     }
 
     private fun identifierOrLabel() {

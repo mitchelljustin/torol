@@ -2,6 +2,7 @@ import ISA.EnvCall
 import ISA.Instruction
 import ISA.decode
 import ISA.hex
+import Memory.Companion.CODE_START
 
 typealias Word = Int
 
@@ -13,37 +14,38 @@ private fun createExceptionMessage(ip: Int, inst: Instruction?, message: String)
 }
 
 
+class Memory(
+    private val code: List<UByte>,
+) {
+    class MemoryException(message: String) : Exception(message)
+
+    companion object {
+        const val HEAP_SIZE = 1024 * 1024
+
+        const val CODE_START = 0x10_0000
+        const val STACK_START = 0x20_0000
+        const val HEAP_START = 0x30_0000
+        const val HEAP_END = HEAP_START + HEAP_SIZE
+    }
+
+    val heap = ArrayList<UByte>(HEAP_SIZE)
+    val stack = ArrayList<Word>(STACK_START)
+}
+
 class Machine(
     private val code: List<UByte>,
 ) {
     class ExecutionError(message: String, inst: Instruction?, ip: Int) :
         Exception(createExceptionMessage(ip, inst, message))
 
-    @OptIn(ExperimentalUnsignedTypes::class)
-    class Memory(
-        private val code: List<UByte>,
-    ) {
-        class MemoryException(message: String) : Exception(message)
 
-        companion object {
-            const val HEAP_SIZE = 1024 * 1024
-
-            const val CODE_START = 0x10_0000
-            const val STACK_START = 0x20_0000
-            const val HEAP_START = 0x30_0000
-            const val HEAP_END = HEAP_START + HEAP_SIZE
-        }
-
-        val heap = ArrayList<UByte>(HEAP_SIZE)
-        val stack = ArrayList<Word>(STACK_START)
-    }
-
-    private var ip = 0
+    private var ip = CODE_START
     private var isRunning = false
     private val mem = Memory(code)
+    private val curByte get() = code.getOrNull(ip)
     private val curInst: Instruction?
         get() {
-            val inst = code.getOrNull(ip) ?: return null
+            val inst = curByte ?: return null
             return decode(inst)
         }
 
@@ -58,9 +60,9 @@ class Machine(
     fun executionError(message: String) = ExecutionError(message, curInst, ip)
 
     fun advance(): UByte {
-        val inst = curInst ?: throw executionError("cannot advance, at end of code")
+        val inst = curByte ?: throw executionError("cannot advance, at end of code")
         ip++
-        return inst.opcode
+        return inst
     }
 
     fun branch(cond: (Word) -> Boolean) {
@@ -81,6 +83,11 @@ class Machine(
                 throw executionError("invalid ecall")
             EnvCall.Exit ->
                 isRunning = false
+            EnvCall.Print -> {
+                val stringPtr = pop()
+                println(stringPtr)
+            }
+
             null ->
                 throw executionError("no such ecall: $callNo")
         }
