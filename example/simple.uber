@@ -12,13 +12,18 @@ push4 x =>
   !op_push4
   !{x}
 
-push4 0x01020304
-push1 callno_print
-!op_ecall
-!op_push1
-!0
-!op_push1
-!callno_exit
-!op_ecall
+ecall => !op_ecall
 
+print value =>
+  push4 {value}
+  push1 callno_print
+  ecall
+
+exit code =>
+  push1 {code}
+  push1 callno_exit
+  ecall
+
+print "hello"
+exit 0
 

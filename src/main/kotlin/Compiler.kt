@@ -1,14 +1,9 @@
+import InstructionSet.toUBytes
+import InstructionSet.vmSize
 import Token.Type.EQUAL_GREATER
 
 typealias Bytecode = List<UByte>
 
-fun Int.vmSize(): Int = when (this.toUInt()) {
-    in 0x00u..0xffu -> 1
-    in 0x01_00u..0xff_ffu -> 2
-    in 0x01_00_00u..0xff_ff_ffu -> 3
-    in 0x01_00_00_00u..0xff_ff_ff_ffu -> 4
-    else -> throw Error("invalid int size")
-}
 
 class Compiler(
     private val program: Expr.Sequence,
@@ -17,7 +12,9 @@ class Compiler(
         Exception("[in $where] $message: $expr")
 
 
-    private val binary = arrayListOf<UByte>()
+    private val readonlySymbols = HashMap<Int, Int>()
+    private val binary = ArrayList<UByte>()
+    private val readonly = ArrayList<UByte>()
 
     fun compile(): Bytecode {
         program.exprs.forEach(::gen)
@@ -26,7 +23,14 @@ class Compiler(
     }
 
     private fun finish() {
-
+        val readonlyStart = binary.size
+        binary += readonly
+        readonlySymbols.entries.forEach { (codeAddr, inReadonly) ->
+            val target = readonlyStart + inReadonly
+            (codeAddr until codeAddr + 4)
+                .zip(target.toUBytes())
+                .forEach { (addr, byte) -> binary[addr] = byte }
+        }
     }
 
     private fun gen(expr: Expr) = when (expr) {
@@ -47,6 +51,15 @@ class Compiler(
         when (expr) {
             is Expr.Literal -> when (expr.literal) {
                 is Int -> dump(expr.literal)
+                is String -> {
+                    val string = expr.literal.encodeToByteArray().map(Byte::toUByte).toMutableList()
+                    val length = string.size
+                    val bytes = length.toUBytes() + string
+                    val ptr = readonly.size
+                    readonlySymbols[binary.size] = ptr
+                    readonly.addAll(bytes)
+                    dump(0x00, size = 4)
+                }
                 else -> throw CodeGenError(
                     "genDirective",
                     "invalid literal type: ${expr.literal::class.simpleName}",

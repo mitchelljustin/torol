@@ -1,6 +1,24 @@
 object InstructionSet {
     fun Int.hex(len: Int = 8) = "0x${toString(16).padStart(len, '0')}"
 
+    fun Int.vmSize(): Int = when (this.toUInt()) {
+        in 0x00u..0xffu -> 1
+        in 0x01_00u..0xff_ffu -> 2
+        in 0x01_00_00u..0xff_ff_ffu -> 3
+        in 0x01_00_00_00u..0xff_ff_ff_ffu -> 4
+        else -> throw Error("invalid int size")
+    }
+
+    fun List<UByte>.toInt(): Int = reversed().fold(0) { acc, byte ->
+        (acc shl 8) + byte.toInt()
+    }
+
+    fun Int.toUBytes(size: Int = 4): List<UByte> =
+        (0 until size).map {
+            val byte = shr(8 * it)
+            byte.toUByte()
+        }
+
     enum class EnvCall(callNo: UByte) {
         Invalid(0x00u),
         Exit(0x01u),
@@ -29,12 +47,9 @@ object InstructionSet {
             machine.advance()
         }.toMutableList()
         val signExtend = signed && bytes.last().toByte() < 0
-        val fillByte = if (signExtend) 0xff else 0x00
-        bytes += (size until 4).map { fillByte.toUByte() }
-        val toPush = bytes.reversed().fold(0) { acc, byte ->
-            (acc shl 8) + byte.toInt()
-        }
-        machine.push(toPush)
+        val fillByte = (if (signExtend) 0xff else 0x00).toUByte()
+        bytes += (size until 4).map { fillByte }
+        machine.push(bytes.toInt())
     }
 
     init {

@@ -2,6 +2,7 @@ import InstructionSet.EnvCall
 import InstructionSet.Instruction
 import InstructionSet.decode
 import InstructionSet.hex
+import InstructionSet.toInt
 
 typealias Word = Int
 
@@ -13,6 +14,7 @@ private fun createExceptionMessage(ip: Int, inst: Instruction?, message: String)
 }
 
 
+@OptIn(ExperimentalUnsignedTypes::class)
 class Machine(
     private val code: List<UByte>,
 ) {
@@ -53,6 +55,8 @@ class Machine(
         return inst
     }
 
+    fun readInt(addr: Word): Int = code.slice(addr until addr + 4).toInt()
+
     fun branch(cond: (Word) -> Boolean) {
         if (cond(pop()))
             jump(pop())
@@ -75,7 +79,11 @@ class Machine(
             }
             EnvCall.Print -> {
                 val stringPtr = pop()
-                println(stringPtr)
+                val stringLength = readInt(stringPtr)
+                val stringStart = stringPtr + 4
+                val bytes = code.slice(stringStart until stringStart + stringLength)
+                val string = bytes.toUByteArray().toByteArray().decodeToString()
+                println(string)
             }
 
             null ->
