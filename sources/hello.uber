@@ -24,6 +24,6 @@ exit code =>
   push1 callno_exit
   ecall
 
-print "hello"
+print "Hello, World"
 exit 0
 

@@ -1,9 +1,9 @@
 import Token.Type.*
 
-
 class Parser(
     private val tokens: List<Token>,
 ) {
+
     class ParseError(where: String, message: String, token: Token) :
         Exception("[$where at ${token.pos}] $message ($token)")
 
@@ -12,8 +12,23 @@ class Parser(
         private val UserOperators = setOf(RARROW, LARROW, PLUS, MINUS, STAR, SLASH)
         private val Operators = AssignOperators + UserOperators
         private val Literals = setOf(STRING, NUMBER)
+
+        fun parse(source: String, verbose: Boolean = false): Expr {
+            if (verbose) println("----------\n$source\n----------")
+            val tokens = Scanner(source).scan()
+            if (verbose) println("## ${tokens.joinToString(" ")}")
+            val parser = Parser(tokens)
+            try {
+                val sequence = parser.parse()
+                if (verbose) println("|| $sequence")
+                return sequence
+            } finally {
+                if (verbose) println(parser.derivation)
+            }
+        }
     }
 
+    private var derivation = StringBuilder()
     private var current = 0
     private val curToken get() = tokens[current]
     private val prevToken get() = tokens[current - 1]
@@ -35,7 +50,9 @@ class Parser(
         return expr
     }
 
-    private fun report(msg: String) = println("-- $msg")
+    private fun report(msg: String) {
+        derivation.append("-- $msg\n")
+    }
 
     private fun mark(where: String) {
         report("in $where: $current:$curToken at ${curToken.pos}")

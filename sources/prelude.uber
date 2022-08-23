@@ -1,0 +1,15 @@
+push1 x =>
+  !push1
+  !{x}
+
+push2 x =>
+  !push2
+  !{x}
+
+push3 x =>
+  !push3
+  !{x}
+
+push4 x =>
+  !push4
+  !{x}

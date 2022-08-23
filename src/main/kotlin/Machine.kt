@@ -2,7 +2,7 @@ import InstructionSet.EnvCall
 import InstructionSet.Instruction
 import InstructionSet.decode
 import InstructionSet.hex
-import InstructionSet.toInt
+import InstructionSet.toWord
 
 typealias Word = Int
 
@@ -14,9 +14,8 @@ private fun createExceptionMessage(ip: Int, inst: Instruction?, message: String)
 }
 
 
-@OptIn(ExperimentalUnsignedTypes::class)
 class Machine(
-    private val code: List<UByte>,
+    private val code: List<Byte>,
 ) {
     class ExecutionError(message: String, inst: Instruction?, ip: Int) :
         Exception(createExceptionMessage(ip, inst, message))
@@ -30,6 +29,8 @@ class Machine(
     private var exitCode: Word? = null
     private var ip = CODE_START
     private val stack = ArrayList<Word>()
+    var fp = 0
+    val sp get() = stack.size
     private var isRunning = false
     private val curByte get() = code.getOrNull(ip)
     private val curInst: Instruction?
@@ -49,13 +50,13 @@ class Machine(
 
     fun executionError(message: String) = ExecutionError(message, curInst, ip)
 
-    fun advance(): UByte {
+    fun advance(): Byte {
         val inst = curByte ?: throw executionError("cannot advance, at end of code")
         ip++
         return inst
     }
 
-    fun readInt(addr: Word): Int = code.slice(addr until addr + 4).toInt()
+    private fun readInt(addr: Word): Word = code.slice(addr until addr + 4).toWord()
 
     fun branch(cond: (Word) -> Boolean) {
         if (cond(pop()))
@@ -64,7 +65,7 @@ class Machine(
 
     fun link() = push(ip)
 
-    fun jump(target: Int) {
+    fun jump(target: Word) {
         ip = target
     }
 
@@ -78,11 +79,7 @@ class Machine(
                 isRunning = false
             }
             EnvCall.Print -> {
-                val stringPtr = pop()
-                val stringLength = readInt(stringPtr)
-                val stringStart = stringPtr + 4
-                val bytes = code.slice(stringStart until stringStart + stringLength)
-                val string = bytes.toUByteArray().toByteArray().decodeToString()
+                val string = popStringConstant()
                 println(string)
             }
 
@@ -91,6 +88,29 @@ class Machine(
         }
     }
 
+    private fun popStringConstant(): String {
+        val stringPtr = pop()
+        val stringLength = readInt(stringPtr)
+        val stringStart = stringPtr + 4
+        val bytes = code.slice(stringStart until stringStart + stringLength)
+        return bytes.toByteArray().decodeToString()
+    }
+
+    fun stackLoad(addr: Int) = stack.getOrNull(addr) ?: throw executionError("bad stack access for read")
+
+    fun stackStore(addr: Int, value: Word) {
+        if (addr >= stack.size)
+            throw executionError("bad stack access for write")
+        stack[addr] = value
+    }
+
+    fun stackSend(offset: Int, value: Word) {
+        stackStore(stack.size - offset - 1, value)
+    }
+
+    fun stackPeek(offset: Int) = stackLoad(stack.size - offset - 1)
+
+    fun top() = stackPeek(0)
     fun push(x: Word) = stack.add(x)
     fun pop(): Word = stack.removeLastOrNull() ?: throw executionError("popped from empty stack")
     fun alter(transform: (Word) -> Word) {
@@ -102,5 +122,9 @@ class Machine(
         if (stack.size < 2) throw executionError("altering two on stack of less than two")
         val top = pop()
         alter { sec -> transform(top, sec) }
+    }
+
+    fun duplicate() {
+        push(top())
     }
 }

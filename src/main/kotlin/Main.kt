@@ -10,6 +10,8 @@ class CLI : CliktCommand() {
     private val verbose by option("-v", "--verbose", help = "print tokens and AST")
         .flag("verbose")
 
+    private val compiler = Compiler()
+
     override fun run() = when (file) {
         null -> runPrompt()
         else -> runFile(file!!)
@@ -19,28 +21,20 @@ class CLI : CliktCommand() {
         while (true) {
             print(">> ")
             val line = readLine() ?: break
-            interpret(line)
+            compileAndRun(line)
         }
     }
 
     private fun runFile(file: File) {
         val source = file.readText()
-        interpret(source)
+        compileAndRun(source)
     }
 
-    private fun interpret(source: String) = try {
-        if (verbose) println("----------\n$source\n----------")
-        val tokens = Scanner(source).scan()
-        if (verbose) println("## ${tokens.joinToString(" ")}")
-        val sequence = Parser(tokens).parse()
-        if (verbose) println("|| $sequence")
-        val expanded = MacroEngine(sequence).expandAll()
-        if (verbose) println("~~ $expanded")
-        val code = Compiler(expanded).compile()
-        val machine = Machine(code)
-        machine.run()
-    } catch (exc: Error) {
-        println("!! ${exc::class.simpleName} ${exc.message}")
+    private fun compileAndRun(source: String) = try {
+        val code = compiler.compile(source, verbose)
+        Machine(code).run()
+    } catch (exc: Exception) {
+        println("!! ${exc::class.simpleName} ${exc.message}\n${exc.stackTrace}")
     }
 }
 
