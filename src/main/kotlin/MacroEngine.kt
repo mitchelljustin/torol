@@ -13,15 +13,6 @@ class MacroEngine {
         const val Include = "include"
     }
 
-    init {
-        InstructionSet.EnvCall.values().forEach {
-            addMacro(
-                Pattern.forName("callno_${it.name}"),
-                Expr.Literal(it.ordinal),
-            )
-        }
-    }
-
     fun expand(expr: Expr): Expr = Expr.transform(expr) { expr ->
         when (expr) {
             is Expr.Binary -> {
@@ -30,7 +21,8 @@ class MacroEngine {
                 }
                 expr
             }
-            is Expr.Apply -> {
+
+            is Expr.Phrase -> {
                 if (expr.target !is Expr.Ident) return@transform null
                 if (expr.target.name == Include) {
                     return@transform expandInclude(expr)
@@ -41,16 +33,18 @@ class MacroEngine {
                 val binding = pattern.bind(expr.terms)
                 substitute(substitution, binding)
             }
+
             is Expr.Ident -> {
-                val pattern = Pattern.forName(expr.name)
+                val pattern = Pattern.forIdent(expr)
                 val macro = findMacro(pattern) ?: return@transform null
                 macro.substitution
             }
+
             else -> null
         }
     }
 
-    private fun expandInclude(expr: Expr.Apply): Expr {
+    private fun expandInclude(expr: Expr.Phrase): Expr {
         if (expr.args.size != 1)
             throw MacroError("expandInclude", "wrong number of arguments", expr)
         val arg = expr.args.first()
@@ -66,14 +60,15 @@ class MacroEngine {
 
     private fun defineMacro(target: Expr, value: Expr) {
         val pattern = when (target) {
-            is Expr.Ident -> Pattern.forName(target.name)
-            is Expr.Apply -> {
+            is Expr.Ident -> Pattern.forIdent(target)
+            is Expr.Phrase -> {
                 if (target.target !is Expr.Ident)
                     throw MacroError("defineMacro", "target must start with Ident", target.target)
                 Pattern.forDefinition(target.terms)
             }
+
             else ->
-                throw MacroError("defineMacro", "target must be Apply or Ident", target)
+                throw MacroError("defineMacro", "target must be Phrase or Ident", target)
         }
         if (pattern in macros)
             throw MacroError("defineMacro", "macro with key already exists: $pattern", target)
@@ -94,18 +89,20 @@ class MacroEngine {
                 val name = expr.body.name
                 binding[name] ?: throw MacroError("subUnquotes", "no expr to substitute for '$name'", expr)
             }
+
             else -> null
         }
     }
 
     private fun findQuote(expr: Expr): Expr.Quote? = when (expr) {
         is Expr.Quote -> expr
-        is Expr.Apply -> findQuote(expr.target)
+        is Expr.Phrase -> findQuote(expr.target)
         is Expr.Sequence -> try {
             expr.exprs.firstNotNullOf(::findQuote)
         } catch (_: NoSuchElementException) {
             null
         }
+
         else -> null
     }
 

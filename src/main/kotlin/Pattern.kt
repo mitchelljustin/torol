@@ -14,14 +14,14 @@ data class Pattern(val terms: List<Term>) {
         }
 
         data class Label(val name: String) : Term() {
-            override fun toString() = "#$name"
+            override fun toString() = "~$name"
         }
     }
 
     override fun toString() = terms.joinToString(".")
 
     companion object {
-        fun forName(name: String) = Pattern(Term.Ident(name))
+        fun forIdent(ident: Expr.Ident) = Pattern(Term.Ident(ident.name))
         fun forDefinition(exprs: List<Expr>): Pattern = Pattern(
             exprs.mapIndexed { i, expr ->
                 when (expr) {

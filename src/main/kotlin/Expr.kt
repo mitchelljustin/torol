@@ -14,6 +14,7 @@ open class Expr {
                 is Label,
                 is Literal,
                 -> modify(expr)
+
                 is Sequence -> modify(Sequence(expr.exprs.map(::recurse)))
                 is Binary -> modify(
                     Binary(
@@ -22,12 +23,14 @@ open class Expr {
                         recurse(expr.value)
                     )
                 )
+
                 is Multi -> modify(Multi(recurse(expr.body)))
                 is Directive -> modify(Directive(recurse(expr.body)))
-                is Apply -> modify(Apply(expr.terms.map(::recurse)))
+                is Phrase -> modify(Phrase(expr.terms.map(::recurse)))
                 is Grouping -> modify(Grouping(recurse(expr.body)))
                 is Quote -> modify(Quote(recurse(expr.body)))
                 is Unquote -> modify(Unquote(recurse(expr.body)))
+                is Sexp -> modify(expr)
                 else -> throw Exception("unsupported expr for transform(): $expr")
             }
         }
@@ -51,6 +54,10 @@ open class Expr {
         override fun toString() = "Literal($literal)"
     }
 
+    data class Sexp(val body: String) : Expr() {
+        override fun toString() = "Sexp$body"
+    }
+
 
     data class Sequence(val exprs: List<Expr>) : Expr() {
         override fun toString(): String {
@@ -63,7 +70,7 @@ open class Expr {
 
     data class Directive(val body: Expr) : Expr()
 
-    data class Apply(val terms: List<Expr>) : Expr() {
+    data class Phrase(val terms: List<Expr>) : Expr() {
         val target = terms.first()
         val args = terms.drop(1)
 

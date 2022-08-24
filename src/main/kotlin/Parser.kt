@@ -39,28 +39,17 @@ class Parser(
     private fun program(): Expr.Sequence {
         mark("program")
         val exprs = ArrayList<Expr>()
-        consumeAny(NEWLINE, DEDENT, INDENT, where = "before program")
+        consumeWhitespace("before program")
         while (!present(EOF)) {
-            consumeAny(NEWLINE, DEDENT, INDENT, where = "before statement in program")
+            consumeWhitespace("before statement in program")
             exprs.add(binary())
-            consumeAny(NEWLINE, DEDENT, INDENT, where = "after statement in program")
+            consumeWhitespace("after statement in program")
         }
         val expr = Expr.Sequence(exprs)
         returning("program", expr)
         return expr
     }
 
-    private fun report(msg: String) {
-        derivation.append("-- $msg\n")
-    }
-
-    private fun mark(where: String) {
-        report("in $where: $current:$curToken at ${curToken.pos}")
-    }
-
-    private fun returning(where: String, what: Expr) {
-        report("in $where: returning $what")
-    }
 
     private fun binary(): Expr {
         mark("assignment")
@@ -82,41 +71,42 @@ class Parser(
         val expr =
             if (present(BANG)) {
                 consume(BANG, where = "before directive")
-                Expr.Directive(apply())
-            } else apply()
+                val body = if (present(LPAREN)) sexp() else phrase()
+                Expr.Directive(body)
+            } else phrase()
         returning("directive", expr)
         return expr
     }
 
-    private fun apply(): Expr {
-        mark("apply")
+    private fun phrase(): Expr {
+        mark("phrase")
         val terms = arrayListOf(primary())
 
         while (!present(RPAREN, RBRAC, DEDENT, INDENT, NEWLINE, EOF, *Operators.toTypedArray())) {
-            mark("appending to apply: primary")
+            mark("appending to phrase: primary")
             val term = primary()
             terms.add(term)
         }
         if (startOfSequence()) {
-            mark("appending to apply: final sequence")
+            mark("appending to phrase: final sequence")
             val finalSequence = sequence()
             val (labelStmts, valueStmts) = finalSequence.exprs.partition { stmt ->
-                stmt is Expr.Apply && stmt.target is Expr.Label && stmt.terms.size == 2
+                stmt is Expr.Phrase && stmt.target is Expr.Label && stmt.terms.size == 2
             }
             if (labelStmts.isNotEmpty()) {
                 if (valueStmts.isNotEmpty())
                     throw parseError(
-                        "apply final sequence",
+                        "phrase final sequence",
                         "cannot both have label statements and value statements"
                     )
                 labelStmts.forEach {
-                    terms += (it as Expr.Apply).terms // adds "label: value"
+                    terms += (it as Expr.Phrase).terms // adds "label: value"
                 }
             } else terms.add(finalSequence)
         }
 
-        val expr = if (terms.size > 1) Expr.Apply(terms) else terms.first()
-        returning("apply", expr)
+        val expr = if (terms.size > 1) Expr.Phrase(terms) else terms.first()
+        returning("phrase", expr)
         return expr
     }
 
@@ -198,6 +188,69 @@ class Parser(
     private fun ident() =
         Expr.Ident(consume(IDENT, where = "ident()").lexeme)
 
+    private fun sexp(): Expr {
+        consume(LPAREN, where = "sexp")
+        var level = 1
+        val body = buildString {
+            fun maybeAddSpace() {
+                if (!present(RPAREN))
+                    append(" ")
+            }
+            append("(")
+            while (level > 0) {
+                when {
+                    consumeMaybe(LPAREN, where = "sexp") -> {
+                        append("(")
+                        level += 1
+                    }
+
+                    consumeMaybe(RPAREN, where = "sexp") -> {
+                        append(")")
+                        maybeAddSpace()
+                        level -= 1
+                    }
+
+                    consumeMaybe(DOLLAR, where = "sexp") -> {
+                        append("$")
+                        append(consume(IDENT, where = "sexp").lexeme)
+                        maybeAddSpace()
+                    }
+
+                    consumeMaybe(IDENT, where = "sexp") -> {
+                        append(prevToken.lexeme)
+                        if (consumeMaybe(DOT)) {
+                            append(".")
+                            append(consume(IDENT, where = "sexp").lexeme)
+                        }
+                        maybeAddSpace()
+                    }
+
+                    else -> {
+                        append(consume(where = "sexp").lexeme)
+                        maybeAddSpace()
+                    }
+                }
+            }
+        }
+
+        return Expr.Sexp(body)
+    }
+
+
+    // --- Utility functions ---
+
+    private fun report(msg: String) {
+        derivation.append("-- $msg\n")
+    }
+
+    private fun mark(where: String) {
+        report("in $where: $current:$curToken at ${curToken.pos}")
+    }
+
+    private fun returning(where: String, what: Expr) {
+        report("in $where: returning $what")
+    }
+
     private fun consumeMaybe(vararg types: Token.Type, where: String = ""): Boolean {
         report("consuming maybe ${types.joinToString(" | ")} $where")
         if (present(*types)) {
@@ -212,6 +265,11 @@ class Parser(
         while (present(*types))
             consume(*types, where = where)
     }
+
+    private fun consumeWhitespace(where: String) {
+        consumeAny(NEWLINE, DEDENT, INDENT, where = where)
+    }
+
 
     private fun consume(vararg types: Token.Type, where: String = "") = consume(types.toSet(), where)
     private fun consume(types: Set<Token.Type>, where: String = ""): Token {

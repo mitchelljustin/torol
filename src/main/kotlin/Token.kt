@@ -21,6 +21,9 @@ class Token(val type: Type, val lexeme: String, val pos: Pos, val value: Any? = 
         RARROW("->"), LARROW("<-"),
         PLUS("+"), MINUS("-"), SLASH("/"),
 
+        // WASM operators
+        DOT("."), DOLLAR("$"),
+
         INDENT, DEDENT,
 
         LABEL,
