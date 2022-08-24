@@ -1,11 +1,12 @@
 import Token.Type.*
 
+
 class Parser(
     private val tokens: List<Token>,
 ) {
 
     class ParseError(where: String, message: String, token: Token) :
-        Exception("[$where at ${token.pos}] $message ($token)")
+        Exception("[$where at ${token.pos}] $message: $token")
 
     companion object {
         private val AssignOperators = setOf(EQUAL, EQUAL_GREATER)
@@ -127,13 +128,13 @@ class Parser(
         return expr
     }
 
-    private fun multi(): Expr {
+    private fun multi(): Expr.Multi {
         consume(STAR, where = "vararg()")
         val body = primary()
         return Expr.Multi(body)
     }
 
-    private fun unquote(): Expr {
+    private fun unquote(): Expr.Unquote {
         mark("unquote")
         consume(LBRAC, where = "to start unquote")
         val expr = binary()
@@ -188,54 +189,53 @@ class Parser(
     private fun ident() =
         Expr.Ident(consume(IDENT, where = "ident()").lexeme)
 
-    private fun sexp(): Expr {
-        consume(LPAREN, where = "sexp")
-        var level = 1
-        val body = buildString {
-            fun maybeAddSpace() {
-                if (!present(RPAREN))
-                    append(" ")
+
+    var groupingNo = 0
+    private fun sexp(): Expr.Sexp {
+        mark("sexp")
+        val sexp = when {
+            consumeMaybe(LPAREN, where = "sexp grouping (start $groupingNo)") -> {
+                val thisGrouping = groupingNo
+                groupingNo += 1
+                val terms = ArrayList<Expr.Sexp>()
+                while (!present(RPAREN)) {
+                    consumeWhitespace("sexp grouping")
+                    terms.add(sexp())
+                    consumeWhitespace("sexp grouping")
+                }
+                consume(RPAREN, where = "sexp grouping (end $thisGrouping)")
+                Expr.Sexp.Grouping(terms)
             }
-            append("(")
-            while (level > 0) {
-                when {
-                    consumeMaybe(LPAREN, where = "sexp") -> {
-                        append("(")
-                        level += 1
-                    }
 
-                    consumeMaybe(RPAREN, where = "sexp") -> {
-                        append(")")
-                        maybeAddSpace()
-                        level -= 1
-                    }
+            consumeMaybe(DOLLAR, where = "sexp $") -> {
+                val name = consume(IDENT, where = "sexp (dollar ident)").lexeme
+                Expr.Sexp.Ident("$$name")
+            }
 
-                    consumeMaybe(DOLLAR, where = "sexp") -> {
-                        append("$")
-                        append(consume(IDENT, where = "sexp").lexeme)
-                        maybeAddSpace()
-                    }
-
-                    consumeMaybe(IDENT, where = "sexp") -> {
-                        append(prevToken.lexeme)
-                        if (consumeMaybe(DOT)) {
-                            append(".")
-                            append(consume(IDENT, where = "sexp").lexeme)
-                        }
-                        maybeAddSpace()
-                    }
-
-                    else -> {
-                        append(consume(where = "sexp").lexeme)
-                        maybeAddSpace()
+            consumeMaybe(IDENT, where = "sexp (ident)") -> {
+                val name = buildString {
+                    append(prevToken.lexeme)
+                    if (consumeMaybe(DOT, where = "sexp (.)")) {
+                        append(".")
+                        append(consume(IDENT, where = "sexp (post-dot ident)").lexeme)
                     }
                 }
+                Expr.Sexp.Ident(name)
             }
+
+            consumeMaybe(NUMBER, where = "sexp (number)") ->
+                Expr.Sexp.Literal(prevToken.value!!)
+
+            consumeMaybe(STRING, where = "sexp (string)") ->
+                Expr.Sexp.Literal(prevToken.value!!)
+
+            present(LBRAC) -> Expr.Sexp.Unquote(unquote().body)
+
+            else -> throw parseError("sexp", "expected sexp")
         }
-
-        return Expr.Sexp(body)
+        returning(where = "sexp", sexp)
+        return sexp
     }
-
 
     // --- Utility functions ---
 
@@ -252,7 +252,6 @@ class Parser(
     }
 
     private fun consumeMaybe(vararg types: Token.Type, where: String = ""): Boolean {
-        report("consuming maybe ${types.joinToString(" | ")} $where")
         if (present(*types)) {
             consume(*types, where = where)
             return true
@@ -260,8 +259,9 @@ class Parser(
         return false
     }
 
+
     private fun consumeAny(vararg types: Token.Type, where: String = "") {
-        report("consuming any ${types.joinToString(" | ")} $where")
+        report("consuming any ${types.joinToString("|")} $where")
         while (present(*types))
             consume(*types, where = where)
     }
@@ -270,11 +270,10 @@ class Parser(
         consumeAny(NEWLINE, DEDENT, INDENT, where = where)
     }
 
-
     private fun consume(vararg types: Token.Type, where: String = "") = consume(types.toSet(), where)
     private fun consume(types: Set<Token.Type>, where: String = ""): Token {
         if (types.isNotEmpty() && !present(types))
-            throw parseError(where, "expected ${types.joinToString(" | ")}, got $curToken")
+            throw parseError(where, "expected ${types.joinToString("|")}, got $curToken")
         report("consuming $current:$curToken $where")
         current++
         return prevToken

@@ -1,10 +1,5 @@
 open class Expr {
     companion object {
-        fun isLeaf(expr: Expr) = when (expr) {
-            is Nil, is Ident, is Label, is Literal -> true
-            else -> false
-        }
-
         fun transform(expr: Expr, func: (Expr) -> Expr?): Expr {
             fun recurse(expr: Expr) = transform(expr, func)
             fun modify(expr: Expr) = func(expr) ?: expr
@@ -13,6 +8,8 @@ open class Expr {
                 is Ident,
                 is Label,
                 is Literal,
+                is Sexp.Ident,
+                is Sexp.Literal
                 -> modify(expr)
 
                 is Sequence -> modify(Sequence(expr.exprs.map(::recurse)))
@@ -30,7 +27,8 @@ open class Expr {
                 is Grouping -> modify(Grouping(recurse(expr.body)))
                 is Quote -> modify(Quote(recurse(expr.body)))
                 is Unquote -> modify(Unquote(recurse(expr.body)))
-                is Sexp -> modify(expr)
+                is Sexp.Grouping -> modify(Sexp.Grouping(expr.terms.map(::recurse)))
+                is Sexp.Unquote -> modify(Sexp.Unquote(recurse(expr.body)))
                 else -> throw Exception("unsupported expr for transform(): $expr")
             }
         }
@@ -54,15 +52,32 @@ open class Expr {
         override fun toString() = "Literal($literal)"
     }
 
-    data class Sexp(val body: String) : Expr() {
-        override fun toString() = "Sexp$body"
+    abstract class Sexp : Expr() {
+        data class Ident(val name: String) : Sexp() {
+            override fun toString() = name
+        }
+
+        data class Literal(val value: Any) : Sexp() {
+            override fun toString() = when (value) {
+                is String -> "\"$value\""
+                else -> value.toString()
+            }
+        }
+
+        data class Grouping(val terms: List<Expr>) : Sexp() {
+            override fun toString() = "(${terms.joinToString(" ")})"
+        }
+
+        data class Unquote(val body: Expr) : Sexp() {
+            override fun toString() = "~${body}~"
+        }
     }
 
-
     data class Sequence(val exprs: List<Expr>) : Expr() {
-        override fun toString(): String {
-            val inner = exprs.joinToString(", ")
-            return "Sequence[$inner]"
+        override fun toString(): String = buildString {
+            append("Sequence(")
+            append(exprs.joinToString(","))
+            append(")")
         }
     }
 

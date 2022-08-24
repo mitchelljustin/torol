@@ -1,3 +1,5 @@
+import Token.Type.EQUAL
+import Token.Type.EQUAL_GREATER
 import java.io.File
 
 class Compiler(
@@ -9,14 +11,16 @@ class Compiler(
         Exception("[in $where] $message: $extra")
 
     private val errors = ArrayList<CodeGenError>()
-    private val macroEngine = MacroEngine()
+    private val expander = Expander()
     private var out = outFile ?: File("./out/${input.nameWithoutExtension}.wat")
+
+    init {
+        out.createNewFile()
+    }
 
     fun compile() {
         var program = Parser.parse(input.readText(), verbose)
-        program = macroEngine.expand(program)
-        out = outFile ?: File("./out/${input.nameWithoutExtension}.wat")
-        out.createNewFile()
+        program = expander.expand(program)
         generate(program)
         errors.forEach { err -> println("!! $err") }
     }
@@ -34,8 +38,21 @@ class Compiler(
         when (expr) {
             is Expr.Directive -> genDirective(expr)
             is Expr.Sequence -> genSequence(expr)
+            is Expr.Binary -> genBinary(expr)
             else -> error("generate", "illegal expr type", expr)
         }
+    }
+
+    private fun genBinary(expr: Expr.Binary) {
+        when (expr.operator.type) {
+            EQUAL_GREATER -> {}
+            EQUAL -> genFunctionDef(expr)
+            else -> error("genBinary", "illegal binary expr operator", expr.operator)
+        }
+    }
+
+    private fun genFunctionDef(expr: Expr.Binary) {
+        TODO("function def")
     }
 
     private fun genSequence(expr: Expr.Sequence) {
@@ -44,7 +61,7 @@ class Compiler(
 
     private fun genDirective(expr: Expr.Directive) {
         when (expr.body) {
-            is Expr.Sexp -> write(expr.body.body)
+            is Expr.Sexp -> write(expr.body.toString())
             else -> error("genDirective", "illegal directive type", expr)
         }
     }

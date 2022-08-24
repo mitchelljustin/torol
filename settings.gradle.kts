@@ -1,3 +1,2 @@
-
-rootProject.name = "ubermacro"
+rootProject.name = "catac"
 

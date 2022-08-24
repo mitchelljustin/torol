@@ -10,8 +10,8 @@ class Scanner(
 
     private var start = 0
     private var current = 0
-    private var line = 0
-    private var column = 0
+    private var line = 1
+    private var column = 1
     private var currentIndent = 0
 
     private val isAtEnd get() = current >= source.length
@@ -54,6 +54,7 @@ class Scanner(
             '#' -> {
                 while (curChar != '\n') advance()
             }
+
             '"' -> string()
             '\n' -> newline()
             ' ' -> {}
@@ -74,6 +75,7 @@ class Scanner(
                 increment()
                 addToken(type)
             }
+
             char in SYMBOLS_SINGLE -> addToken(SYMBOLS_SINGLE[char]!!)
             else -> throw scanError("doubleSymbol()", "a valid one or two character symbol")
         }
@@ -82,7 +84,7 @@ class Scanner(
     private fun newline() {
         addToken(NEWLINE)
         line++
-        column = 0
+        column = 1
         var spaces = 0
         while (checkAndConsume(' ')) spaces++
         val indentLevel = spaces / SPACES_PER_INDENT
@@ -117,10 +119,12 @@ class Scanner(
                 }
                 lexeme.toInt()
             }
+
             prevChar == '0' && checkAndConsume('x') -> {
                 consumeAll(DIGITS)
                 lexeme.substring(2).toInt(16)
             }
+
             else -> {
                 consumeAll(DIGITS)
                 lexeme.toInt()
@@ -147,6 +151,7 @@ class Scanner(
             increment()
             true
         }
+
         else -> false
     }
 
