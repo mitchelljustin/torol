@@ -18,10 +18,11 @@ data class Pattern(val terms: List<Term>) {
         }
     }
 
-    override fun toString() = terms.joinToString(".")
+    override fun toString() = terms
+        .joinToString(" ")
 
     companion object {
-        fun forIdent(ident: Expr.Ident) = Pattern(Term.Ident(ident.name))
+        fun forName(name: String) = Pattern(Term.Ident(name))
         fun forDefinition(exprs: List<Expr>): Pattern = Pattern(
             exprs.mapIndexed { i, expr ->
                 when (expr) {

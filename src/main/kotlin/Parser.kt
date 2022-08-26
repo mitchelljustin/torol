@@ -54,11 +54,11 @@ class Parser(
 
     private fun binary(): Expr {
         mark("assignment")
-        var expr = directive()
+        var expr = assembly()
 
         while (present(Operators)) {
             val operator = consume(where = "in binary (operator)")
-            val value = directive()
+            val value = assembly()
             expr = Expr.Binary(expr, operator, value)
         }
 
@@ -67,15 +67,14 @@ class Parser(
         return expr
     }
 
-    private fun directive(): Expr {
-        mark("directive")
+    private fun assembly(): Expr {
+        mark("assembly")
         val expr =
             if (present(BANG)) {
-                consume(BANG, where = "before directive")
-                val body = if (present(LPAREN)) sexp() else phrase()
-                Expr.Directive(body)
+                consume(BANG, where = "before assembly")
+                Expr.Assembly(sexp())
             } else phrase()
-        returning("directive", expr)
+        returning("assembly", expr)
         return expr
     }
 
@@ -83,7 +82,7 @@ class Parser(
         mark("phrase")
         val terms = arrayListOf(primary())
 
-        while (!present(RPAREN, RBRAC, DEDENT, INDENT, NEWLINE, EOF, *Operators.toTypedArray())) {
+        while (!present(RPAREN, DEDENT, INDENT, NEWLINE, EOF, *Operators.toTypedArray())) {
             mark("appending to phrase: primary")
             val term = primary()
             terms.add(term)
@@ -117,9 +116,8 @@ class Parser(
             present(IDENT) -> ident()
             present(Literals) -> literal()
             present(LPAREN) -> grouping()
-            present(LBRAC) -> unquote()
+            present(TILDE) -> unquote()
             present(LABEL) -> label()
-            present(PIPE) -> quote()
             present(STAR) -> multi()
             startOfSequence() -> sequence()
             else -> throw parseError("primary", "illegal primary expression")
@@ -136,19 +134,14 @@ class Parser(
 
     private fun unquote(): Expr.Unquote {
         mark("unquote")
-        consume(LBRAC, where = "to start unquote")
-        val expr = binary()
-        consume(RBRAC, where = "to end unquote")
-        returning("unquote", expr)
-        return Expr.Unquote(expr)
-    }
-
-    private fun quote(): Expr {
-        mark("quote")
-        consume(PIPE, where = "before quote")
-        val expr = binary()
-        returning("quote", expr)
-        return Expr.Quote(expr)
+        consume(TILDE, where = "to start unquote")
+        val body = when {
+            present(LPAREN) -> grouping()
+            present(IDENT) -> ident()
+            else -> throw parseError("unquote", "illegal unquote body")
+        }
+        returning("unquote", body)
+        return Expr.Unquote(body)
     }
 
     private fun startOfSequence() = present(NEWLINE) && nextToken?.type == INDENT
@@ -190,7 +183,7 @@ class Parser(
         Expr.Ident(consume(IDENT, where = "ident()").lexeme)
 
 
-    var groupingNo = 0
+    private var groupingNo = 0
     private fun sexp(): Expr.Sexp {
         mark("sexp")
         val sexp = when {
@@ -229,7 +222,7 @@ class Parser(
             consumeMaybe(STRING, where = "sexp (string)") ->
                 Expr.Sexp.Literal(prevToken.value!!)
 
-            present(LBRAC) -> Expr.Sexp.Unquote(unquote().body)
+            present(TILDE) -> Expr.Sexp.Unquote(unquote().body)
 
             else -> throw parseError("sexp", "expected sexp")
         }

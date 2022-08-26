@@ -9,10 +9,10 @@ class Token(val type: Type, val lexeme: String, val pos: Pos, val value: Any? = 
         NEWLINE("\n"),
 
         // grouping operators
-        LPAREN("("), RPAREN(")"), LBRAC("{"), RBRAC("}"), LSQUARE("["), RSQUARE("]"),
+        LPAREN("("), RPAREN(")"), LSQUARE("["), RSQUARE("]"),
 
         // special operators
-        PIPE("|"), BANG("!"), STAR("*"),
+        TILDE("~"), BANG("!"), STAR("*"),
 
         // assignment operators
         EQUAL("="), EQUAL_GREATER("=>"),

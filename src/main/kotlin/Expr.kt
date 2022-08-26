@@ -8,6 +8,7 @@ open class Expr {
                 is Ident,
                 is Label,
                 is Literal,
+                is Sexp.Unquote,
                 is Sexp.Ident,
                 is Sexp.Literal
                 -> modify(expr)
@@ -22,13 +23,12 @@ open class Expr {
                 )
 
                 is Multi -> modify(Multi(recurse(expr.body)))
-                is Directive -> modify(Directive(recurse(expr.body)))
+                is Assembly -> modify(Assembly(recurse(expr.body) as Sexp))
                 is Phrase -> modify(Phrase(expr.terms.map(::recurse)))
                 is Grouping -> modify(Grouping(recurse(expr.body)))
                 is Quote -> modify(Quote(recurse(expr.body)))
                 is Unquote -> modify(Unquote(recurse(expr.body)))
                 is Sexp.Grouping -> modify(Sexp.Grouping(expr.terms.map(::recurse)))
-                is Sexp.Unquote -> modify(Sexp.Unquote(recurse(expr.body)))
                 else -> throw Exception("unsupported expr for transform(): $expr")
             }
         }
@@ -69,7 +69,7 @@ open class Expr {
         }
 
         data class Unquote(val body: Expr) : Sexp() {
-            override fun toString() = "~${body}~"
+            override fun toString() = "~${body}"
         }
     }
 
@@ -83,11 +83,13 @@ open class Expr {
 
     data class Binary(val target: Expr, val operator: Token, val value: Expr) : Expr()
 
-    data class Directive(val body: Expr) : Expr()
+    data class Assembly(val body: Sexp) : Expr()
 
     data class Phrase(val terms: List<Expr>) : Expr() {
         val target = terms.first()
         val args = terms.drop(1)
+
+        constructor(target: Expr, args: List<Expr>) : this(listOf(target) + args)
 
         override fun toString(): String {
             val inner = terms.joinToString(", ")
