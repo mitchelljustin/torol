@@ -35,11 +35,12 @@ string.store addr string =
   (next addr) <- string.len string
   ()
 
-stdout = 1
-iovec = 0
-written = iovec + 8
-string.store iovec "hello catac!\n"
-drop
+print message =
+  stdout = 1
+  iovec = 0
+  string.store iovec message
+  written = iovec + 8
+  _ = fd_write stdout iovec 1 written
+  ()
 
-fd_write stdout iovec 1 written
-drop
+print "hello catac!\n"

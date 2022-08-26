@@ -46,7 +46,7 @@ class Parser(
             exprs.add(assignment())
             consumeWhitespace("after statement in program")
         }
-        val expr = Expr.Sequence(exprs)
+        val expr = Expr.Sequence(exprs, topLevel = true)
         returning("program", expr)
         return expr
     }
@@ -59,7 +59,7 @@ class Parser(
         while (present(AssignmentOperators)) {
             val operator = Expr.Operator(consume(where = "in assignment (operator)"))
             val value = binary()
-            expr = Expr.Binary(expr, operator, value)
+            expr = Expr.Assignment(expr, operator, value)
         }
 
         returning("assignment", expr)
@@ -73,8 +73,8 @@ class Parser(
 
         while (present(BinaryOperators)) {
             val operator = Expr.Operator(consume(where = "in binary (operator)"))
-            val value = assembly()
-            expr = Expr.Binary(expr, operator, value)
+            val rhs = assembly()
+            expr = Expr.Binary(expr, operator, rhs)
         }
 
         returning("binary", expr)

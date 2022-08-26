@@ -18,7 +18,7 @@ class Expander {
 
     fun expand(expr: Expr): Expr = Expr.transform(expr) { expr ->
         when (expr) {
-            is Expr.Binary -> when (expr.operator.operator.type) {
+            is Expr.Assignment -> when (expr.operator.operator.type) {
                 EQUAL_GREATER -> {
                     defineMacro(expr.target, expr.value)
                     null
@@ -28,6 +28,8 @@ class Expander {
 
                 else -> expandMacroCall(expr.terms)
             }
+
+            is Expr.Binary -> expandMacroCall(expr.terms)
 
             is Expr.Phrase -> {
                 if (expr.target !is Expr.Ident) return@transform null
@@ -151,12 +153,16 @@ class Expander {
             }
 
             is Expr.Grouping -> {
-                try {
-                    val terms = (target.body as Expr.Binary).terms
-                    Pattern.forDefinition(terms)
-                } catch (_: ClassCastException) {
-                    throw MacroException("defineOperatorMacro", "operator macro must be (lhs <operator> rhs)", target)
+                val terms = when (target.body) {
+                    is Expr.Binary -> target.body.terms
+                    is Expr.Assignment -> target.body.terms
+                    else -> throw MacroException(
+                        "defineOperatorMacro",
+                        "operator macro must be (lhs <operator> rhs)",
+                        target
+                    )
                 }
+                Pattern.forDefinition(terms)
             }
 
             else ->

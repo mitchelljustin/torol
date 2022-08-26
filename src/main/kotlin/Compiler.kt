@@ -72,7 +72,8 @@ class Compiler(
         when (expr) {
             is Expr.Assembly -> genAssembly(expr)
             is Expr.Sequence -> genSequence(expr)
-            is Expr.Binary -> genBinary(expr)
+            is Expr.Assignment -> genAssignment(expr)
+            is Expr.Binary -> error("generate", "binary ops must be defined and called as macros", expr)
             is Expr.Literal -> genLiteral(expr)
             is Expr.Phrase -> genCall(expr)
             is Expr.Ident -> genVariable(expr)
@@ -83,7 +84,6 @@ class Compiler(
     }
 
     private fun genNil() {
-        genI32Const(0)
     }
 
     private fun genGrouping(expr: Expr.Grouping) {
@@ -123,7 +123,8 @@ class Compiler(
         val len = value.length
         val hex32 = len.toString(16).padStart(8, '0')
         val lenData = hex32.chunked(2) { "\\$it" }.reversed().joinToString("")
-        meta.add("data", listOf("i32.const", ptr), (lenData + value).literal())
+        val bytes = lenData + value
+        meta.add("data", listOf("i32.const", ptr), bytes.literal())
         stringPtr += len + 4
         return ptr
     }
@@ -132,16 +133,16 @@ class Compiler(
         function.add("i32.const", value)
     }
 
-    private fun genBinary(expr: Expr.Binary) {
+    private fun genAssignment(expr: Expr.Assignment) {
         when (expr.operator.operator.type) {
             EQUAL_GREATER -> {}
             EQUAL -> when (expr.target) {
                 is Expr.Ident -> genVariableDef(expr.target, expr.value)
                 is Expr.Phrase -> genFunctionDef(expr.target, expr.value)
-                else -> error("genBinary", "illegal target for assignment", expr.target)
+                else -> error("genAssignment", "illegal target for assignment", expr.target)
             }
 
-            else -> error("genBinary", "illegal binary expr operator", expr.operator)
+            else -> error("genAssignment", "illegal assignment operator", expr.operator)
         }
     }
 
@@ -155,7 +156,7 @@ class Compiler(
         function.add("local.set", name)
     }
 
-    private fun genFunctionDef(expr: Expr.Phrase, value: Expr) {
+    private fun genFunctionDef(expr: Expr.Phrase, body: Expr) {
         val pattern = Pattern.forDefinition(expr.terms)
         val params = pattern.terms
             .filterIsInstance<Pattern.Term.Any>()
@@ -166,11 +167,11 @@ class Compiler(
         val newFunction = Assembly.Function(
             name = pattern.name(),
             params,
-            returns = true,
+            returns = body.returns,
         )
         functionStack.add(newFunction)
         functions.add(newFunction)
-        generate(value)
+        generate(body)
         functionStack.removeLast()
     }
 

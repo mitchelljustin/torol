@@ -3,8 +3,8 @@ import Assembly.literal
 open class Expr {
     companion object {
         fun transform(expr: Expr, func: (Expr) -> Expr?): Expr {
-            fun recurse(expr: Expr) = transform(expr, func)
-            fun alter(expr: Expr) = func(expr) ?: expr
+            fun transform(expr: Expr) = transform(expr, func)
+            fun visit(expr: Expr) = func(expr) ?: expr
             return when (expr) {
                 is Nil,
                 is Ident,
@@ -13,30 +13,41 @@ open class Expr {
                 is Sexp.Unquote,
                 is Sexp.Ident,
                 is Sexp.Literal
-                -> alter(expr)
+                -> visit(expr)
 
-                is Sequence -> alter(Sequence(expr.exprs.map(::recurse)))
-                is Binary -> alter(
+                is Sequence -> visit(Sequence(expr.exprs.map(::transform)))
+                is Binary -> visit(
                     Binary(
-                        recurse(expr.target),
+                        transform(expr.lhs),
                         expr.operator,
-                        recurse(expr.value)
+                        transform(expr.rhs)
                     )
                 )
 
-                is Multi -> alter(Multi(recurse(expr.body)))
-                is Assembly -> alter(Assembly(recurse(expr.body) as Sexp))
-                is Phrase -> alter(Phrase(expr.terms.map(::recurse)))
-                is Grouping -> alter(Grouping(recurse(expr.body)))
-                is Quote -> alter(Quote(recurse(expr.body)))
-                is Unquote -> alter(Unquote(recurse(expr.body)))
-                is Sexp.List -> alter(Sexp.List(expr.terms.map(::recurse)))
+                is Assignment -> visit(
+                    Assignment(
+                        transform(expr.target),
+                        expr.operator,
+                        transform(expr.value)
+                    )
+                )
+
+                is Multi -> visit(Multi(transform(expr.body)))
+                is Assembly -> visit(Assembly(transform(expr.body) as Sexp))
+                is Phrase -> visit(Phrase(expr.terms.map(::transform)))
+                is Grouping -> visit(Grouping(transform(expr.body)))
+                is Quote -> visit(Quote(transform(expr.body)))
+                is Unquote -> visit(Unquote(transform(expr.body)))
+                is Sexp.List -> visit(Sexp.List(expr.terms.map(::transform)))
                 else -> throw Exception("unsupported expr for transform(): $expr")
             }
         }
     }
 
+    open val returns = true
+
     class Nil : Expr() {
+        override val returns = false
         override fun toString() = "Nil"
     }
 
@@ -116,7 +127,8 @@ open class Expr {
         }
     }
 
-    data class Sequence(val exprs: List<Expr>) : Expr() {
+    data class Sequence(val exprs: List<Expr>, val topLevel: Boolean = false) : Expr() {
+        override val returns get() = (exprs.lastOrNull()?.returns ?: false) && !topLevel
         override fun toString(): String = buildString {
             append("Sequence(")
             append(exprs.joinToString(","))
@@ -126,8 +138,12 @@ open class Expr {
 
     data class Operator(val operator: Token) : Expr()
 
-    data class Binary(val target: Expr, val operator: Operator, val value: Expr) : Expr() {
+    data class Assignment(val target: Expr, val operator: Operator, val value: Expr) : Expr() {
         val terms get() = listOf(operator, target, value)
+    }
+
+    data class Binary(val lhs: Expr, val operator: Operator, val rhs: Expr) : Expr() {
+        val terms get() = listOf(operator, lhs, rhs)
     }
 
     data class Assembly(val body: Sexp) : Expr()
