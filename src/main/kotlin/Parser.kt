@@ -5,8 +5,8 @@ class Parser(
     private val tokens: List<Token>,
 ) {
 
-    class ParseError(where: String, message: String, token: Token) :
-        Exception("[$where at ${token.pos}] $message: $token")
+    class ParseException(where: String, message: String, token: Token) :
+        CompilerException("[$where at ${token.pos}] $message: $token")
 
     companion object {
         private val AssignOperators = setOf(EQUAL, EQUAL_GREATER)
@@ -281,5 +281,5 @@ class Parser(
 
     private fun present(types: Set<Token.Type>) = curToken.type in types
 
-    private fun parseError(where: String, message: String) = ParseError(where, message, curToken)
+    private fun parseError(where: String, message: String) = ParseException(where, message, curToken)
 }

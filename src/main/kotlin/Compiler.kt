@@ -12,8 +12,8 @@ class Compiler(
     private val verbose: Boolean = false
 ) {
 
-    class CodeGenError(where: String, message: String, extra: Any?) :
-        Exception(buildString {
+    class CodeGenException(where: String, message: String, extra: Any?) :
+        CompilerException(buildString {
             append("[in ")
             append(where)
             append("] ")
@@ -24,7 +24,7 @@ class Compiler(
                 append(" ${extra::class.simpleName}")
         })
 
-    private val errors = ArrayList<CodeGenError>()
+    private val errors = ArrayList<CodeGenException>()
     private val expander = Expander()
 
     init {
@@ -64,7 +64,7 @@ class Compiler(
     }
 
     private fun error(where: String, message: String, extra: Any? = null) {
-        errors.add(CodeGenError(where, message, extra))
+        errors.add(CodeGenException(where, message, extra))
     }
 
 
@@ -101,7 +101,7 @@ class Compiler(
         }
         expr.args.forEach(::generate)
         val pattern = Pattern.forSearch(expr.terms)
-        val name = pattern.toString().id()
+        val name = pattern.name().id()
         function.add("call", name)
     }
 
@@ -147,8 +147,9 @@ class Compiler(
 
     private fun genVariableDef(target: Expr.Ident, value: Expr) {
         val name = target.name.id()
-        val typeDef = "$name i32" // TODO: types
-        function.locals.add(typeDef)
+        val local = "$name i32" // TODO: types
+        if (local !in function.locals)
+            function.locals.add(local)
         generate(value)
         function.add("local.set", name)
     }
@@ -162,9 +163,9 @@ class Compiler(
                 "$name i32"
             }
         val newFunction = Assembly.Function(
-            name = pattern.toString(),
+            name = pattern.name(),
             params,
-            resultType = "i32",
+            returns = true,
         )
         functionStack.add(newFunction)
         functions.add(newFunction)
@@ -173,7 +174,9 @@ class Compiler(
     }
 
     private fun genSequence(expr: Expr.Sequence) {
-        expr.exprs.forEach(::generate)
+        expr.exprs.forEachIndexed { i, stmt ->
+            generate(stmt)
+        }
     }
 
     private fun genAssembly(expr: Expr.Assembly) {

@@ -6,8 +6,8 @@ import java.io.File
 
 
 class Expander {
-    class MacroError(where: String, message: String, expr: Expr?) :
-        Exception("[$where] $message: $expr")
+    class MacroException(where: String, message: String, expr: Expr?) :
+        CompilerException("[$where] $message: $expr")
 
     data class Macro(val pattern: Pattern, val substitution: Expr)
 
@@ -57,36 +57,42 @@ class Expander {
         val module = try {
             val (label, module) = expr.args
             if (label != Expr.Label("from"))
-                throw MacroError("expandImport", "expected import from: module (func1) (func2) ..", label)
+                throw MacroException("expandImport", "expected import from: module (func1) (func2) ..", label)
             if (module !is Expr.Ident)
-                throw MacroError("expandImport", "module must be an ident", module)
+                throw MacroException("expandImport", "module must be an ident", module)
             module
         } catch (_: ArrayIndexOutOfBoundsException) {
-            throw MacroError("expandImport", "wrong number of arguments", expr)
+            throw MacroException("expandImport", "wrong number of arguments", expr)
         }
 
         fun importFunc(expr: Expr): Array<Any?> = when (expr) {
             is Expr.Grouping -> importFunc(expr.body)
             is Expr.Phrase -> {
                 if (expr.terms.any { it !is Expr.Ident })
-                    throw MacroError("expandImport", "illegal function import, all terms must be ident", expr.target)
+                    throw MacroException(
+                        "expandImport",
+                        "illegal function import, all terms must be ident",
+                        expr.target
+                    )
                 val terms = expr.terms.map { (it as Expr.Ident).name }
                 val name = terms.first()
                 val pattern = Pattern.forDefinition(expr.terms)
                 val args = terms.drop(1)
+                val params = args.map { Sexp.from("param", it.id(), "i32") }
                 val func = Sexp.from(
                     "func",
-                    pattern.toString().id(),
-                    *args.map { Sexp.from("param", it.id(), "i32") }.toTypedArray(),
+                    pattern.name().id(),
+                    *params.toTypedArray(),
                     Sexp.from("result", "i32"),
                 )
                 arrayOf(
                     name.literal(),
+                    Sexp.Linebreak(),
                     func,
                 )
             }
 
-            else -> throw MacroError("expandImport", "illegal function import", expr)
+            else -> throw MacroException("expandImport", "illegal function import", expr)
         }
 
         //!(import "wasi_unstable" "fd_write" (func $fd_write__4 (param i32 i32 i32 i32) (result i32)))
@@ -117,10 +123,10 @@ class Expander {
 
     private fun expandInclude(expr: Expr.Phrase): Expr {
         if (expr.args.size != 1)
-            throw MacroError("expandInclude", "wrong number of arguments", expr)
+            throw MacroException("expandInclude", "wrong number of arguments", expr)
         val arg = expr.args.first()
         if (arg !is Expr.Literal || arg.literal !is String)
-            throw MacroError("expandInclude", "include arg must be a string", expr)
+            throw MacroException("expandInclude", "include arg must be a string", expr)
         val module = arg.literal.removeSuffix(".uber")
         val source = File("$module.uber").readText()
         val program = Parser.parse(source)
@@ -134,15 +140,15 @@ class Expander {
             is Expr.Ident -> Pattern.forName(target.name)
             is Expr.Phrase -> {
                 if (target.target !is Expr.Ident)
-                    throw MacroError("defineMacro", "target must start with Ident", target.target)
+                    throw MacroException("defineMacro", "target must start with Ident", target.target)
                 Pattern.forDefinition(target.terms)
             }
 
             else ->
-                throw MacroError("defineMacro", "target must be Phrase or Ident", target)
+                throw MacroException("defineMacro", "target must be Phrase or Ident", target)
         }
         if (pattern in scope)
-            throw MacroError("defineMacro", "macro already exists: $pattern", target)
+            throw MacroException("defineMacro", "macro already exists: $pattern", target)
         addMacro(pattern, value)
     }
 
@@ -154,9 +160,9 @@ class Expander {
         when (expr) {
             is Expr.Unquote -> {
                 if (expr.body !is Expr.Ident)
-                    throw MacroError("subUnquotes", "unquote body must be an Ident", expr.body)
+                    throw MacroException("subUnquotes", "unquote body must be an Ident", expr.body)
                 val name = expr.body.name
-                scope.resolve(name)?.substitution ?: throw MacroError(
+                scope.resolve(name)?.substitution ?: throw MacroException(
                     "subUnquotes",
                     "no expr to substitute for '$name'",
                     expr
@@ -174,7 +180,7 @@ class Expander {
             val terms = when (expr.body) {
                 is Expr.Phrase -> expr.body.terms.map(::exprToSexp)
                 is Expr.Ident -> arrayListOf(exprToSexp(expr.body))
-                else -> throw MacroError("exprToSexp", "illegal grouping body for sexp", expr.body)
+                else -> throw MacroException("exprToSexp", "illegal grouping body for sexp", expr.body)
             }
             Sexp.List(terms)
         }
@@ -185,13 +191,13 @@ class Expander {
                 is String,
                 is Number -> Sexp.Literal(expr.literal)
 
-                else -> throw MacroError("exprToSexp", "illegal literal type for sexp", expr)
+                else -> throw MacroException("exprToSexp", "illegal literal type for sexp", expr)
             }
         }
 
         is Sexp -> expr
 
-        else -> throw MacroError("exprToSexp", "illegal expr for sexp", expr)
+        else -> throw MacroException("exprToSexp", "illegal expr for sexp", expr)
     }
 
     private fun subSexp(expr: Expr): Sexp = when (expr) {

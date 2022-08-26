@@ -1,3 +1,5 @@
+import Assembly.literal
+
 open class Expr {
     companion object {
         fun transform(expr: Expr, func: (Expr) -> Expr?): Expr {
@@ -54,6 +56,24 @@ open class Expr {
 
     abstract class Sexp : Expr() {
 
+        open class Builder {
+            internal val terms = arrayListOf<Sexp>()
+
+            fun add(value: Any?) {
+                terms.add(from(value))
+            }
+
+            fun add(vararg values: Any?) {
+                add(values.toList())
+            }
+
+            fun linebreak() {
+                add(Linebreak())
+            }
+
+            internal fun toSexp() = List(terms)
+        }
+
         companion object {
             fun from(value: Any?): Sexp = when (value) {
                 is Sexp -> value
@@ -64,6 +84,12 @@ open class Expr {
             }
 
             fun from(vararg terms: Any?) = from(terms.toList())
+
+            fun build(f: Builder.() -> Unit): List {
+                val builder = Builder()
+                builder.f()
+                return builder.toSexp()
+            }
         }
 
         data class Ident(val name: String) : Sexp() {
@@ -72,7 +98,7 @@ open class Expr {
 
         data class Literal(val value: Any) : Sexp() {
             override fun toString() = when (value) {
-                is String -> "\"$value\""
+                is String -> value.literal()
                 else -> value.toString()
             }
         }
@@ -83,6 +109,10 @@ open class Expr {
 
         data class Unquote(val body: Expr) : Sexp() {
             override fun toString() = "~${body}"
+        }
+
+        class Linebreak : Sexp() {
+            override fun toString() = "\n "
         }
     }
 

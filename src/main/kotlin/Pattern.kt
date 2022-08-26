@@ -21,7 +21,7 @@ data class Pattern(val terms: List<Term>) {
         }
     }
 
-    override fun toString() = when {
+    fun name() = when {
         args.all { it is Term.Wildcard } -> "${target}__${args.size}"
         else -> terms.joinToString(".")
     }

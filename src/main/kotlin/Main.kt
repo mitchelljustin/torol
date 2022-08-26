@@ -15,8 +15,9 @@ class CLI : CliktCommand() {
     override fun run() {
         try {
             Compiler(file, outFile, verbose).compile()
-        } catch (exc: Exception) {
+        } catch (exc: CompilerException) {
             println("!! ${exc::class.simpleName} ${exc.message}\n${exc.stackTrace}")
+            throw exc
         }
     }
 }

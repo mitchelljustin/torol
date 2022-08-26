@@ -6,25 +6,10 @@ object Assembly {
     fun String.literal() = "\"$this\""
 
 
-    open class Section {
-        internal val stmts = ArrayList<Sexp>()
-
-        // add("i32.const", i)
-        // add("data", listOf("i32.const", loc), string)
-
-        fun add(sexp: Sexp) {
-            stmts.add(sexp)
-        }
-
-        fun add(vararg items: Any?) {
-            val sexp = Sexp.List(items.map(Sexp::from))
-            add(sexp)
-        }
-
-
+    open class Section : Sexp.Builder() {
         open fun writeTo(writer: Writer) {
-            stmts.forEach {
-                writer.write(it.toString())
+            terms.forEach { term ->
+                writer.write(term.toString())
                 writer.write("\n")
             }
         }
@@ -34,33 +19,38 @@ object Assembly {
         val name: String,
         val params: List<String> = listOf(),
         val locals: MutableList<String> = arrayListOf(),
-        val resultType: String? = null,
+        val returns: Boolean = false,
         val export: String? = null,
     ) : Section() {
+        private fun compile(): Sexp {
+            val body = terms
+            return Sexp.build {
+                add("func")
+                add(name.id())
+                if (export != null) {
+                    add("export", export.literal())
+                }
+                params.forEach { param ->
+                    add("param", param)
+                }
+                if (returns) {
+                    add("result", "i32")
+                }
+                locals.forEach { local ->
+                    add("local", local)
+                }
+                linebreak()
+                body.forEach { stmt ->
+                    add(stmt)
+                    linebreak()
+                }
+            }
+        }
+
+
         override fun writeTo(writer: Writer) {
-            writer.write("(func ${name.id()}")
-            writer.write(" ")
-            if (export != null) {
-                writer.write("(export ${export.literal()})")
-                writer.write(" ")
-            }
-            writer.write(
-                params.joinToString(" ") { "(param $it)" }
-            )
-            writer.write(" ")
-            if (resultType != null) {
-                writer.write("(result $resultType)")
-                writer.write(" ")
-            }
-            writer.write(
-                locals.joinToString(" ") { "(local $it)" }
-            )
-            writer.write(" ")
-            writer.write("\n")
-            stmts.forEach {
-                writer.write("  $it\n")
-            }
-            writer.write(")")
+            val assembly = compile().toString()
+            writer.write(assembly)
         }
     }
 

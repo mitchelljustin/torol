@@ -19,18 +19,18 @@ next ptr => add ~ptr 4
 
 drop => !drop
 
-string_len string => load string
-string_ptr string => next string
+string.len string => load string
+string.ptr string => next string
 
-string_store addr string =
-  store addr (string_ptr string)
-  store (next addr) (string_len string)
+string.store addr string =
+  store addr (string.ptr string)
+  store (next addr) (string.len string)
   ()
 
 stdout => 1
-iovec => 100
-written => 20
-string_store iovec "hello catac!\n"
+iovec => 0
+written => (add 8 iovec)
+string.store iovec "hello catac!\n"
 drop
 
 fd_write stdout iovec 1 written

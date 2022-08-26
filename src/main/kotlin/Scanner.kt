@@ -3,8 +3,8 @@ import Token.Type.*
 class Scanner(
     private val source: String,
 ) {
-    class ScanError(where: String, expected: String, actual: Char?, pos: Token.Pos) :
-        Exception("[$where at $pos] expected $expected, got '${actual ?: ""}'")
+    class ScanException(where: String, expected: String, actual: Char?, pos: Token.Pos) :
+        CompilerException("[$where at $pos] expected $expected, got '${actual ?: ""}'")
 
     private val tokens = ArrayList<Token>()
 
@@ -170,5 +170,5 @@ class Scanner(
     }
 
     private fun scanError(where: String, expected: String) =
-        ScanError(where, expected, prevChar, curPos)
+        ScanException(where, expected, prevChar, curPos)
 }

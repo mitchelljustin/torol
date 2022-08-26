@@ -1,0 +1,1 @@
+abstract class CompilerException(message: String) : Exception(message)
