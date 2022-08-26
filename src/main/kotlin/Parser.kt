@@ -102,7 +102,9 @@ class Parser(
                 labelStmts.forEach {
                     terms += (it as Expr.Phrase).terms // adds "label: value"
                 }
-            } else terms.add(finalSequence)
+            } else {
+                terms.addAll(valueStmts)
+            }
         }
 
         val expr = if (terms.size > 1) Expr.Phrase(terms) else terms.first()
@@ -179,8 +181,16 @@ class Parser(
     private fun literal() =
         Expr.Literal(consume(Literals, where = "literal()").value!!)
 
-    private fun ident() =
-        Expr.Ident(consume(IDENT, where = "ident()").lexeme)
+    private fun ident(): Expr.Ident {
+        val name = buildString {
+            append(consume(IDENT, where = "ident").lexeme)
+            if (consumeMaybe(DOT, where = "ident dot")) {
+                append(".")
+                append(consume(IDENT, where = "ident post-dot").lexeme)
+            }
+        }
+        return Expr.Ident(name)
+    }
 
 
     private var groupingNo = 0
@@ -197,7 +207,7 @@ class Parser(
                     consumeWhitespace("sexp grouping")
                 }
                 consume(RPAREN, where = "sexp grouping (end $thisGrouping)")
-                Expr.Sexp.Grouping(terms)
+                Expr.Sexp.List(terms)
             }
 
             consumeMaybe(DOLLAR, where = "sexp $") -> {
@@ -205,14 +215,8 @@ class Parser(
                 Expr.Sexp.Ident("$$name")
             }
 
-            consumeMaybe(IDENT, where = "sexp (ident)") -> {
-                val name = buildString {
-                    append(prevToken.lexeme)
-                    if (consumeMaybe(DOT, where = "sexp (.)")) {
-                        append(".")
-                        append(consume(IDENT, where = "sexp (post-dot ident)").lexeme)
-                    }
-                }
+            present(IDENT) -> {
+                val name = ident().name
                 Expr.Sexp.Ident(name)
             }
 

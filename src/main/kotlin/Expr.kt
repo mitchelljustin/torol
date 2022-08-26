@@ -28,7 +28,7 @@ open class Expr {
                 is Grouping -> modify(Grouping(recurse(expr.body)))
                 is Quote -> modify(Quote(recurse(expr.body)))
                 is Unquote -> modify(Unquote(recurse(expr.body)))
-                is Sexp.Grouping -> modify(Sexp.Grouping(expr.terms.map(::recurse)))
+                is Sexp.List -> modify(Sexp.List(expr.terms.map(::recurse)))
                 else -> throw Exception("unsupported expr for transform(): $expr")
             }
         }
@@ -53,6 +53,19 @@ open class Expr {
     }
 
     abstract class Sexp : Expr() {
+
+        companion object {
+            fun from(value: Any?): Sexp = when (value) {
+                is Sexp -> value
+                is Int -> Literal(value)
+                is String -> Ident(value)
+                is kotlin.collections.List<*> -> List(value.map(::from))
+                else -> throw RuntimeException("cannot convert to sexp: $value")
+            }
+
+            fun from(vararg terms: Any?) = from(terms.toList())
+        }
+
         data class Ident(val name: String) : Sexp() {
             override fun toString() = name
         }
@@ -64,7 +77,7 @@ open class Expr {
             }
         }
 
-        data class Grouping(val terms: List<Expr>) : Sexp() {
+        data class List(val terms: kotlin.collections.List<Expr>) : Sexp() {
             override fun toString() = "(${terms.joinToString(" ")})"
         }
 

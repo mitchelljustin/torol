@@ -1,9 +1,12 @@
+import Assembly.id
+import Assembly.literal
+import Expr.Sexp
 import Token.Type.EQUAL_GREATER
 import java.io.File
 
 
 class Expander {
-    class MacroError(where: String, message: String, expr: Expr) :
+    class MacroError(where: String, message: String, expr: Expr?) :
         Exception("[$where] $message: $expr")
 
     data class Macro(val pattern: Pattern, val substitution: Expr)
@@ -25,7 +28,7 @@ class Expander {
                 if (expr.target !is Expr.Ident) return@transform null
                 when (expr.target.name) {
                     "include" -> return@transform expandInclude(expr)
-//                    "string_len" -> return@transform expandStringLen(expr)
+                    "import" -> return@transform expandImport(expr)
                     else -> {
                         val key = Pattern.forSearch(expr.terms)
                         val macro = findMacro(key) ?: return@transform null
@@ -50,13 +53,56 @@ class Expander {
         }
     }
 
-    private fun expandStringLen(expr: Expr.Phrase): Expr {
-        if (expr.args.size != 1)
-            throw MacroError("expandStringLen", "len requires 1 arg", expr)
-        val arg = expand(expr.args.first())
-        if (arg !is Expr.Literal || arg.literal !is String)
-            throw MacroError("expandStringLen", "len expects string literal", expr)
-        return Expr.Literal(arg.literal.length)
+    private fun expandImport(expr: Expr.Phrase): Expr {
+        val module = try {
+            val (label, module) = expr.args
+            if (label != Expr.Label("from"))
+                throw MacroError("expandImport", "expected import from: module (func1) (func2) ..", label)
+            if (module !is Expr.Ident)
+                throw MacroError("expandImport", "module must be an ident", module)
+            module
+        } catch (_: ArrayIndexOutOfBoundsException) {
+            throw MacroError("expandImport", "wrong number of arguments", expr)
+        }
+
+        fun importFunc(expr: Expr): Array<Any?> = when (expr) {
+            is Expr.Grouping -> importFunc(expr.body)
+            is Expr.Phrase -> {
+                if (expr.terms.any { it !is Expr.Ident })
+                    throw MacroError("expandImport", "illegal function import, all terms must be ident", expr.target)
+                val terms = expr.terms.map { (it as Expr.Ident).name }
+                val name = terms.first()
+                val pattern = Pattern.forDefinition(expr.terms)
+                val args = terms.drop(1)
+                val func = Sexp.from(
+                    "func",
+                    pattern.toString().id(),
+                    *args.map { Sexp.from("param", it.id(), "i32") }.toTypedArray(),
+                    Sexp.from("result", "i32"),
+                )
+                arrayOf(
+                    name.literal(),
+                    func,
+                )
+            }
+
+            else -> throw MacroError("expandImport", "illegal function import", expr)
+        }
+
+        //!(import "wasi_unstable" "fd_write" (func $fd_write__4 (param i32 i32 i32 i32) (result i32)))
+        // import from: wasi_unstable
+        //   fd_write fd iovec iovec_len num_written
+
+        val items = expr.args.drop(2)
+        return Expr.Sequence(items.map {
+            Expr.Assembly(
+                Sexp.from(
+                    "import",
+                    module.name.literal(),
+                    *importFunc(it),
+                )
+            )
+        })
     }
 
     private fun <T> withNewScope(func: () -> T): T {
@@ -117,39 +163,39 @@ class Expander {
                 )
             }
 
-            is Expr.Sexp.Unquote -> subSexp(expr.body)
+            is Sexp.Unquote -> subSexp(expr.body)
 
             else -> null
         }
     }
 
-    private fun exprToSexp(expr: Expr): Expr.Sexp = when (expr) {
+    private fun exprToSexp(expr: Expr): Sexp = when (expr) {
         is Expr.Grouping -> {
             val terms = when (expr.body) {
                 is Expr.Phrase -> expr.body.terms.map(::exprToSexp)
                 is Expr.Ident -> arrayListOf(exprToSexp(expr.body))
                 else -> throw MacroError("exprToSexp", "illegal grouping body for sexp", expr.body)
             }
-            Expr.Sexp.Grouping(terms)
+            Sexp.List(terms)
         }
 
-        is Expr.Ident -> Expr.Sexp.Ident(expr.name)
+        is Expr.Ident -> Sexp.Ident(expr.name)
         is Expr.Literal -> {
             when (expr.literal) {
                 is String,
-                is Number -> Expr.Sexp.Literal(expr.literal)
+                is Number -> Sexp.Literal(expr.literal)
 
                 else -> throw MacroError("exprToSexp", "illegal literal type for sexp", expr)
             }
         }
 
-        is Expr.Sexp -> expr
+        is Sexp -> expr
 
         else -> throw MacroError("exprToSexp", "illegal expr for sexp", expr)
     }
 
-    private fun subSexp(expr: Expr): Expr.Sexp = when (expr) {
-        is Expr.Phrase, is Expr.Ident -> subSexp(expand(expr))
+    private fun subSexp(expr: Expr): Sexp = when (expr) {
+        is Expr.Phrase, is Expr.Ident -> exprToSexp(expand(expr))
         is Expr.Assembly -> subSexp(expr.body)
         else -> exprToSexp(expr)
     }

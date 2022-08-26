@@ -1,6 +1,9 @@
 data class Pattern(val terms: List<Term>) {
     constructor(vararg terms: Term) : this(terms.toList())
 
+    val target get() = terms.first()
+    val args get() = terms.drop(1)
+
     open class Term {
         data class Wildcard(val binding: String?) : Term() {
             override fun equals(other: Any?) = other is Wildcard
@@ -14,12 +17,14 @@ data class Pattern(val terms: List<Term>) {
         }
 
         data class Label(val name: String) : Term() {
-            override fun toString() = "~$name"
+            override fun toString() = "$name:"
         }
     }
 
-    override fun toString() = terms
-        .joinToString(" ")
+    override fun toString() = when {
+        args.all { it is Term.Wildcard } -> "${target}__${args.size}"
+        else -> terms.joinToString(".")
+    }
 
     companion object {
         fun forName(name: String) = Pattern(Term.Ident(name))
