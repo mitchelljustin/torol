@@ -9,10 +9,10 @@ class Parser(
         CompilerException("[$where at ${token.pos}] $message: $token")
 
     companion object {
-        private val AssignOperators = setOf(EQUAL, EQUAL_GREATER)
-        private val UserOperators = setOf(RARROW, LARROW, PLUS, MINUS, STAR, SLASH)
-        private val Operators = AssignOperators + UserOperators
-        private val Literals = setOf(STRING, NUMBER)
+        val AssignmentOperators = setOf(EQUAL, EQUAL_GREATER, LARROW, RARROW)
+        val BinaryOperators = setOf(PLUS, MINUS, STAR, SLASH)
+        val Operators = AssignmentOperators + BinaryOperators
+        val Literals = setOf(STRING, NUMBER)
 
         fun parse(source: String, verbose: Boolean = false): Expr {
             if (verbose) println("----------\n$source\n----------")
@@ -43,7 +43,7 @@ class Parser(
         consumeWhitespace("before program")
         while (!present(EOF)) {
             consumeWhitespace("before statement in program")
-            exprs.add(binary())
+            exprs.add(assignment())
             consumeWhitespace("after statement in program")
         }
         val expr = Expr.Sequence(exprs)
@@ -52,17 +52,32 @@ class Parser(
     }
 
 
-    private fun binary(): Expr {
+    private fun assignment(): Expr {
         mark("assignment")
-        var expr = assembly()
+        var expr = binary()
 
-        while (present(Operators)) {
-            val operator = consume(where = "in binary (operator)")
-            val value = assembly()
+        while (present(AssignmentOperators)) {
+            val operator = Expr.Operator(consume(where = "in assignment (operator)"))
+            val value = binary()
             expr = Expr.Binary(expr, operator, value)
         }
 
         returning("assignment", expr)
+
+        return expr
+    }
+
+    private fun binary(): Expr {
+        mark("binary")
+        var expr = assembly()
+
+        while (present(BinaryOperators)) {
+            val operator = Expr.Operator(consume(where = "in binary (operator)"))
+            val value = assembly()
+            expr = Expr.Binary(expr, operator, value)
+        }
+
+        returning("binary", expr)
 
         return expr
     }
@@ -153,7 +168,7 @@ class Parser(
         consume(LPAREN, where = "before parenthesis grouping")
         if (consumeMaybe(RPAREN))
             return Expr.Nil()
-        val expr = Expr.Grouping(binary())
+        val expr = Expr.Grouping(assignment())
         consume(RPAREN, where = "after parenthesis grouping")
         returning("grouping", expr)
         return expr
@@ -166,7 +181,7 @@ class Parser(
         val stmts = ArrayList<Expr>()
         while (!present(DEDENT)) {
             mark("appending statement to sequence")
-            stmts.add(binary())
+            stmts.add(assignment())
             consumeMaybe(NEWLINE, where = "after statement in sequence")
         }
         consume(DEDENT, where = "after sequence")

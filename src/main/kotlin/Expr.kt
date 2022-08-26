@@ -4,7 +4,7 @@ open class Expr {
     companion object {
         fun transform(expr: Expr, func: (Expr) -> Expr?): Expr {
             fun recurse(expr: Expr) = transform(expr, func)
-            fun modify(expr: Expr) = func(expr) ?: expr
+            fun alter(expr: Expr) = func(expr) ?: expr
             return when (expr) {
                 is Nil,
                 is Ident,
@@ -13,10 +13,10 @@ open class Expr {
                 is Sexp.Unquote,
                 is Sexp.Ident,
                 is Sexp.Literal
-                -> modify(expr)
+                -> alter(expr)
 
-                is Sequence -> modify(Sequence(expr.exprs.map(::recurse)))
-                is Binary -> modify(
+                is Sequence -> alter(Sequence(expr.exprs.map(::recurse)))
+                is Binary -> alter(
                     Binary(
                         recurse(expr.target),
                         expr.operator,
@@ -24,13 +24,13 @@ open class Expr {
                     )
                 )
 
-                is Multi -> modify(Multi(recurse(expr.body)))
-                is Assembly -> modify(Assembly(recurse(expr.body) as Sexp))
-                is Phrase -> modify(Phrase(expr.terms.map(::recurse)))
-                is Grouping -> modify(Grouping(recurse(expr.body)))
-                is Quote -> modify(Quote(recurse(expr.body)))
-                is Unquote -> modify(Unquote(recurse(expr.body)))
-                is Sexp.List -> modify(Sexp.List(expr.terms.map(::recurse)))
+                is Multi -> alter(Multi(recurse(expr.body)))
+                is Assembly -> alter(Assembly(recurse(expr.body) as Sexp))
+                is Phrase -> alter(Phrase(expr.terms.map(::recurse)))
+                is Grouping -> alter(Grouping(recurse(expr.body)))
+                is Quote -> alter(Quote(recurse(expr.body)))
+                is Unquote -> alter(Unquote(recurse(expr.body)))
+                is Sexp.List -> alter(Sexp.List(expr.terms.map(::recurse)))
                 else -> throw Exception("unsupported expr for transform(): $expr")
             }
         }
@@ -124,7 +124,11 @@ open class Expr {
         }
     }
 
-    data class Binary(val target: Expr, val operator: Token, val value: Expr) : Expr()
+    data class Operator(val operator: Token) : Expr()
+
+    data class Binary(val target: Expr, val operator: Operator, val value: Expr) : Expr() {
+        val terms get() = listOf(operator, target, value)
+    }
 
     data class Assembly(val body: Sexp) : Expr()
 

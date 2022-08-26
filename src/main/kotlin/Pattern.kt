@@ -1,19 +1,19 @@
 data class Pattern(val terms: List<Term>) {
     constructor(vararg terms: Term) : this(terms.toList())
 
-    val target get() = terms.first()
-    val args get() = terms.drop(1)
+    private val target get() = terms.first()
+    private val args get() = terms.drop(1)
 
     open class Term {
-        data class Wildcard(val binding: String?) : Term() {
-            override fun equals(other: Any?) = other is Wildcard
+        data class Any(val binding: String?) : Term() {
+            override fun equals(other: kotlin.Any?) = other is Any
             override fun hashCode() = 0
 
             override fun toString() = "_"
         }
 
-        data class Ident(val name: String) : Term() {
-            override fun toString() = name
+        data class Exact(val value: String) : Term() {
+            override fun toString() = value
         }
 
         data class Label(val name: String) : Term() {
@@ -22,28 +22,30 @@ data class Pattern(val terms: List<Term>) {
     }
 
     fun name() = when {
-        args.all { it is Term.Wildcard } -> "${target}__${args.size}"
+        args.all { it is Term.Any } -> "${target}__${args.size}"
         else -> terms.joinToString(".")
     }
 
     companion object {
-        fun forName(name: String) = Pattern(Term.Ident(name))
-        fun forDefinition(exprs: List<Expr>): Pattern = Pattern(
-            exprs.mapIndexed { i, expr ->
-                when (expr) {
-                    is Expr.Label -> Term.Label(expr.name)
-                    is Expr.Ident -> if (i == 0) Term.Ident(expr.name) else Term.Wildcard(expr.name)
-                    else -> throw Exception("illegal macro definition pattern term: $expr")
+        fun forName(name: String) = Pattern(Term.Exact(name))
+        fun forDefinition(terms: List<Expr>): Pattern = Pattern(
+            terms.mapIndexed { i, term ->
+                when (term) {
+                    is Expr.Operator -> Term.Exact(term.operator.lexeme)
+                    is Expr.Label -> Term.Label(term.name)
+                    is Expr.Ident -> if (i == 0) Term.Exact(term.name) else Term.Any(term.name)
+                    else -> throw Exception("illegal macro definition pattern term: $term")
                 }
             }
         )
 
-        fun forSearch(exprs: List<Expr>): Pattern = Pattern(
-            exprs.mapIndexed { i, expr ->
-                when (expr) {
-                    is Expr.Label -> Term.Label(expr.name)
-                    is Expr.Ident -> if (i == 0) Term.Ident(expr.name) else Term.Wildcard(null)
-                    else -> Term.Wildcard(null)
+        fun forSearch(terms: List<Expr>): Pattern = Pattern(
+            terms.mapIndexed { i, term ->
+                when (term) {
+                    is Expr.Operator -> Term.Exact(term.operator.lexeme)
+                    is Expr.Label -> Term.Label(term.name)
+                    is Expr.Ident -> if (i == 0) Term.Exact(term.name) else Term.Any(null)
+                    else -> Term.Any(null)
                 }
             }
         )
@@ -52,7 +54,7 @@ data class Pattern(val terms: List<Term>) {
     fun bind(exprs: List<Expr>): Map<String, Expr> =
         terms
             .zip(exprs)
-            .filter { (t, _) -> t is Term.Wildcard && t.binding != null }
-            .associate { (term, expr) -> Pair((term as Term.Wildcard).binding!!, expr) }
+            .filter { (t, _) -> t is Term.Any && t.binding != null }
+            .associate { (term, expr) -> Pair((term as Term.Any).binding!!, expr) }
 
 }

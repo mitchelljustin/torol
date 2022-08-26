@@ -1,6 +1,7 @@
 import Assembly.id
 import Assembly.literal
 import Expr.Sexp
+import Token.Type.EQUAL
 import Token.Type.EQUAL_GREATER
 import java.io.File
 
@@ -17,39 +18,44 @@ class Expander {
 
     fun expand(expr: Expr): Expr = Expr.transform(expr) { expr ->
         when (expr) {
-            is Expr.Binary -> {
-                if (expr.operator.type == EQUAL_GREATER) {
+            is Expr.Binary -> when (expr.operator.operator.type) {
+                EQUAL_GREATER -> {
                     defineMacro(expr.target, expr.value)
+                    null
                 }
-                expr
+
+                EQUAL -> null
+
+                else -> expandMacroCall(expr.terms)
             }
 
             is Expr.Phrase -> {
                 if (expr.target !is Expr.Ident) return@transform null
                 when (expr.target.name) {
-                    "include" -> return@transform expandInclude(expr)
-                    "import" -> return@transform expandImport(expr)
-                    else -> {
-                        val key = Pattern.forSearch(expr.terms)
-                        val macro = findMacro(key) ?: return@transform null
-                        val (pattern, substitution) = macro
-                        withNewScope {
-                            pattern.bind(expr.terms).forEach { (name, expr) ->
-                                addMacro(Pattern.forName(name), expr)
-                            }
-                            substitute(substitution)
-                        }
-                    }
+                    "include" -> expandInclude(expr)
+                    "import" -> expandImport(expr)
+                    else -> expandMacroCall(expr.terms)
                 }
             }
 
             is Expr.Ident -> {
                 val pattern = Pattern.forName(expr.name)
-                val macro = findMacro(pattern) ?: return@transform null
-                macro.substitution
+                findMacro(pattern)?.substitution
             }
 
             else -> null
+        }
+    }
+
+    private fun expandMacroCall(terms: List<Expr>): Expr? {
+        val searchPat = Pattern.forSearch(terms)
+        val macro = findMacro(searchPat) ?: return null
+        val (pattern, substitution) = macro
+        return withNewScope {
+            pattern.bind(terms).forEach { (name, expr) ->
+                addMacro(Pattern.forName(name), expr)
+            }
+            substitute(substitution)
         }
     }
 
@@ -78,7 +84,7 @@ class Expander {
                 val name = terms.first()
                 val pattern = Pattern.forDefinition(expr.terms)
                 val args = terms.drop(1)
-                val params = args.map { Sexp.from("param", it.id(), "i32") }
+                val params = args.map { arg -> Sexp.from("param", arg.id(), "i32") }
                 val func = Sexp.from(
                     "func",
                     pattern.name().id(),
@@ -142,6 +148,15 @@ class Expander {
                 if (target.target !is Expr.Ident)
                     throw MacroException("defineMacro", "target must start with Ident", target.target)
                 Pattern.forDefinition(target.terms)
+            }
+
+            is Expr.Grouping -> {
+                try {
+                    val terms = (target.body as Expr.Binary).terms
+                    Pattern.forDefinition(terms)
+                } catch (_: ClassCastException) {
+                    throw MacroException("defineOperatorMacro", "operator macro must be (lhs <operator> rhs)", target)
+                }
             }
 
             else ->

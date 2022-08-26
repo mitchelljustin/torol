@@ -1,21 +1,29 @@
 import from: wasi_unstable
   fd_write fd iovec iovec_len num_written
 
-add a b =>
+(a + b) =>
   ~a
   ~b
   !i32.add
+
+(a - b) =>
+  ~a
+  ~b
+  !i32.sub
 
 store addr value =>
   ~addr
   ~value
   !i32.store
 
+(addr <- value) =>
+  store ~addr ~value
+
 load addr =>
   ~addr
   !i32.load
 
-next ptr => add ~ptr 4
+next ptr => ~ptr + 4
 
 drop => !drop
 
@@ -23,13 +31,13 @@ string.len string => load string
 string.ptr string => next string
 
 string.store addr string =
-  store addr (string.ptr string)
-  store (next addr) (string.len string)
+  addr <- string.ptr string
+  (next addr) <- string.len string
   ()
 
-stdout => 1
-iovec => 0
-written => (add 8 iovec)
+stdout = 1
+iovec = 0
+written = iovec + 8
 string.store iovec "hello catac!\n"
 drop
 

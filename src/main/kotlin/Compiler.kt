@@ -55,8 +55,8 @@ class Compiler(
         outFile!!.printWriter().use { out ->
             out.write("(module\n")
             meta.writeTo(out)
-            functions.forEach {
-                it.writeTo(out)
+            functions.forEach { function ->
+                function.writeTo(out)
                 out.write("\n\n")
             }
             out.write("\n)\n")
@@ -133,7 +133,7 @@ class Compiler(
     }
 
     private fun genBinary(expr: Expr.Binary) {
-        when (expr.operator.type) {
+        when (expr.operator.operator.type) {
             EQUAL_GREATER -> {}
             EQUAL -> when (expr.target) {
                 is Expr.Ident -> genVariableDef(expr.target, expr.value)
@@ -144,6 +144,7 @@ class Compiler(
             else -> error("genBinary", "illegal binary expr operator", expr.operator)
         }
     }
+
 
     private fun genVariableDef(target: Expr.Ident, value: Expr) {
         val name = target.name.id()
@@ -157,7 +158,7 @@ class Compiler(
     private fun genFunctionDef(expr: Expr.Phrase, value: Expr) {
         val pattern = Pattern.forDefinition(expr.terms)
         val params = pattern.terms
-            .filterIsInstance<Pattern.Term.Wildcard>()
+            .filterIsInstance<Pattern.Term.Any>()
             .map {
                 val name = it.binding?.id() ?: ""
                 "$name i32"
