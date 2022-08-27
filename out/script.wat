@@ -1,50 +1,16 @@
 (module
 (import "wasi_unstable" "fd_write" 
   (func $fd_write//4 (param $fd i32) (param $iovec i32) (param $iovec_len i32) (param $num_written i32) (result i32)))
-(data (i32.const 65536) "\10\00\00\00_ hello catac!\n")
-(data (i32.const 65556) "\02\00\00\00hi")
+(data (i32.const 65536) "\06\00\00\00one!\n")
 (memory (export "memory") 2)
-(func $main (export "_start") (local $message i32) (local $ptr i32) (local $i i32) 
+(func $main (export "_start") 
+  (i32.const 1) 
+  (i32.const 1) 
+  i32.eq 
+  if 
   (i32.const 65536) 
-  (local.set $message) 
-  (local.get $message) 
-  (i32.const 4) 
-  i32.add 
-  (local.set $ptr) 
-  (i32.const 0) 
-  (local.set $i) 
-  loop $loop 
-  (local.get $ptr) 
-  (i32.const 48) 
-  (local.get $i) 
-  i32.add 
-  i32.store8 
-  (local.get $message) 
   (call $print//1) 
-  (local.get $i) 
-  (i32.const 1) 
-  i32.add 
-  (local.set $i) 
-  (local.get $i) 
-  (i32.const 9) 
-  (i32.const 1) 
-  i32.add 
-  i32.lt_s 
-  (br_if $loop) 
-  end 
-  (i32.const 0) 
-  (local.set $i) 
-  loop $loop 
-  (i32.const 65556) 
-  (call $print//1) 
-  (local.get $i) 
-  (i32.const 1) 
-  i32.add 
-  (local.set $i) 
-  (local.get $i) 
-  (i32.const 4) 
-  i32.lt_s 
-  (br_if $loop) 
+  else 
   end 
  )
 

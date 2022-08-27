@@ -57,14 +57,14 @@
 
 (- a) => (0 - ~a)
 
-store addr value =>
+store addr value inst:inst =>
   ~addr
   ~value
-  !i32.store
+  !~inst
   ()
 
-(addr <- value) =>
-  store ~addr ~value
+store32 addr value => store ~addr ~value inst:i32.store
+store8 addr value => store ~addr ~value inst:i32.store8
 
 load addr =>
   ~addr
@@ -75,7 +75,7 @@ get index array => load (~array + (~index * 4))
 string.len string => load ~string
 string.ptr string => ~string + 4
 
-Stdout => 1
+stdout => 1
 
 false => 0
 true => 1
@@ -90,7 +90,7 @@ if cond then: thenBody else: elseBody =>
 
 if cond then: thenBody => if ~cond then: ~thenBody else: ()
 
-if cond thenBody => if ~cond then: ~thenBody
+if cond ..thenBody => if ~cond then: ~thenBody
 
 for i from:start until:end ..body =>
   ~i = ~start
@@ -102,3 +102,17 @@ for i from:start until:end ..body =>
   !end
 
 for i from:start through:end ..body => for ~i from:~start until:(~end + 1) ~body
+
+import from: "wasi_unstable"
+  fd_write fd iovec iovec_len num_written
+
+string.store iovec string =
+  store32 \ iovec \ string.ptr string
+  store32 \ iovec + 4 \ string.len string
+
+print message =
+  iovec = 0x1000
+  iovec_len = 1
+  string.store iovec message
+  written = iovec + 8
+  () = fd_write stdout iovec iovec_len written

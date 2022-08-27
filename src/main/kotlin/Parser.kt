@@ -57,20 +57,40 @@ class Parser(
         return expr
     }
 
-
     private fun assignment(): Expr {
         mark("assignment")
-        var expr = binary()
+        var expr = lateEval()
 
-        while (present(AssignmentOperators)) {
+        if (present(AssignmentOperators)) {
             val operator = Expr.Operator(consume(where = "in assignment (operator)"))
-            val value = binary()
+            val value = lateEval()
             expr = Expr.Assignment(expr, operator, value)
         }
 
         returning("assignment", expr)
 
         return expr
+    }
+
+    private fun lateEval(): Expr {
+        mark("lateEval")
+        val exprs = arrayListOf(binary())
+        while (consumeMaybe(BACKSLASH, where = "after late eval expr"))
+            exprs.add(binary())
+        val head = exprs.first()
+        if (exprs.size == 1) {
+            returning("lateEval", head)
+            return head
+        }
+        val headTerms = when (head) {
+            is Expr.Phrase -> head.terms
+            is Expr.Ident -> listOf(head)
+            else -> throw parseError("lateEval glue-up", "head expr must be a phrase or ident")
+        }
+        val tailTerms = exprs.drop(1)
+        val gluedPhrase = Expr.Phrase(headTerms + tailTerms)
+        returning("lateEval", gluedPhrase)
+        return gluedPhrase
     }
 
     private fun binary(): Expr {
@@ -116,9 +136,9 @@ class Parser(
             return Expr.Phrase(terms)
         }
 
-        while (!present(RPAREN, DEDENT, INDENT, NEWLINE, EOF, *Operators.toTypedArray())) {
-            mark("adding to phrase: primary")
+        while (!present(RPAREN, DEDENT, INDENT, NEWLINE, EOF, BACKSLASH, *Operators.toTypedArray())) {
             val term = unary()
+            mark("adding term to phrase: $term")
             terms.add(term)
         }
         if (startOfSequence()) {
@@ -144,7 +164,7 @@ class Parser(
     }
 
     private fun unary(): Expr {
-        if (consumeMaybe(MINUS)) {
+        if (consumeMaybe(MINUS, where = "unary")) {
             return Expr.Unary(Expr.Operator(prevToken), unary())
         }
         return primary()
@@ -275,7 +295,7 @@ class Parser(
     // --- Utility functions ---
 
     private fun report(msg: String) {
-        derivation.append("${stepNo.toString().padStart(5, '0')} -- $msg\n")
+        derivation.append("${stepNo.toString().padStart(5, ' ')} -- $msg\n")
         stepNo++
     }
 

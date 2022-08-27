@@ -11,8 +11,8 @@ class Token(val type: Type, val lexeme: String, val pos: Pos, val value: Any? = 
         // grouping operators
         LPAREN("("), RPAREN(")"),
 
-        // meta operators
-        TILDE("~"), BANG("!"),
+        // special operators
+        TILDE("~"), BANG("!"), BACKSLASH("\\"), DOT_DOT(".."),
 
         // assignment operators
         EQUAL("="), EQUAL_GREATER("=>"),
@@ -26,9 +26,6 @@ class Token(val type: Type, val lexeme: String, val pos: Pos, val value: Any? = 
 
         // WASM operators
         DOT("."), DOLLAR("$"),
-
-        // multi operator
-        DOT_DOT(".."),
 
         INDENT, DEDENT,
 

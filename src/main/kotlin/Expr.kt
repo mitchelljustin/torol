@@ -166,8 +166,8 @@ open class Expr {
         val args = terms.drop(1)
 
         override fun toString(): String {
-            val inner = terms.joinToString(", ")
-            return "{$inner}"
+            val inner = terms.joinToString(" ")
+            return "Phrase($inner})"
         }
     }
 

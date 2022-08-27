@@ -1,25 +1,4 @@
 include "std"
 
-import from: "wasi_unstable"
-  fd_write fd iovec iovec_len num_written
-
-string.store iovec string =
-  iovec <- string.ptr string
-  (iovec + 4) <- string.len string
-
-print message =
-  iovec = 0x1000
-  iovec_len = 1
-  string.store iovec message
-  written = iovec + 8
-  () = fd_write Stdout iovec iovec_len written
-
-message = "_ hello catac!\n"
-ptr = string.ptr message
 for i from: 0 through: 9
-  ptr
-  0x30 + i
-  !i32.store8
-  print message
-
-for i from: 0 until: 4 (print "hi")
+  if \ i == 1 \ then: print "one!\n"
