@@ -30,6 +30,7 @@ class Expander {
             }
 
             is Expr.Binary -> expandMacroCall(expr.terms)
+            is Expr.Unary -> expandMacroCall(expr.terms)
 
             is Expr.Phrase -> {
                 if (expr.target !is Expr.Ident) return@transform null
@@ -66,9 +67,9 @@ class Expander {
             val (label, module) = expr.args
             if (label != Expr.Label("from"))
                 throw MacroException("expandImport", "expected import from: module (func1) (func2) ..", label)
-            if (module !is Expr.Ident)
-                throw MacroException("expandImport", "module must be an ident", module)
-            module
+            if (module !is Expr.Literal || module.literal !is String)
+                throw MacroException("expandImport", "module must be an string literal", module)
+            module.literal
         } catch (_: ArrayIndexOutOfBoundsException) {
             throw MacroException("expandImport", "wrong number of arguments", expr)
         }
@@ -112,7 +113,7 @@ class Expander {
             Expr.Assembly(
                 Sexp.from(
                     "import",
-                    module.name.literal(),
+                    module.literal(),
                     *importFunc(it),
                 )
             )
@@ -135,8 +136,8 @@ class Expander {
         val arg = expr.args.first()
         if (arg !is Expr.Literal || arg.literal !is String)
             throw MacroException("expandInclude", "include arg must be a string", expr)
-        val module = arg.literal.removeSuffix(".uber")
-        val source = File("$module.uber").readText()
+        val module = arg.literal.removeSuffix(".catac")
+        val source = File("$module.catac").readText()
         val program = Parser.parse(source)
         return expand(program)
     }
@@ -153,12 +154,13 @@ class Expander {
             }
 
             is Expr.Grouping -> {
-                val terms = when (target.body) {
-                    is Expr.Binary -> target.body.terms
-                    is Expr.Assignment -> target.body.terms
+                val terms = when (val body = target.body) {
+                    is Expr.Binary -> body.terms
+                    is Expr.Unary -> body.terms
+                    is Expr.Assignment -> body.terms
                     else -> throw MacroException(
                         "defineOperatorMacro",
-                        "operator macro must be (lhs <operator> rhs)",
+                        "operator macro must be (lhs <operator> [rhs])",
                         target
                     )
                 }

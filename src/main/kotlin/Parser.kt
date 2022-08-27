@@ -10,7 +10,7 @@ class Parser(
 
     companion object {
         val AssignmentOperators = setOf(EQUAL, EQUAL_GREATER, LARROW, RARROW)
-        val BinaryOperators = setOf(PLUS, MINUS, STAR, SLASH)
+        val BinaryOperators = setOf(PLUS, MINUS, STAR, SLASH, EQUAL_EQUAL, BANG_EQUAL)
         val Operators = AssignmentOperators + BinaryOperators
         val Literals = setOf(STRING, NUMBER)
 
@@ -96,17 +96,17 @@ class Parser(
 
     private fun phrase(): Expr {
         mark("phrase")
-        val terms = arrayListOf(primary())
+        val terms = arrayListOf(unary())
 
         while (!present(RPAREN, DEDENT, INDENT, NEWLINE, EOF, *Operators.toTypedArray())) {
             mark("appending to phrase: primary")
-            val term = primary()
+            val term = unary()
             terms.add(term)
         }
         if (startOfSequence()) {
             mark("appending to phrase: final sequence")
             val finalSequence = sequence()
-            val (labelStmts, valueStmts) = finalSequence.exprs.partition { stmt ->
+            val (labelStmts, valueStmts) = finalSequence.stmts.partition { stmt ->
                 stmt is Expr.Phrase && stmt.target is Expr.Label
             }
             if (labelStmts.isNotEmpty()) {
@@ -116,15 +116,13 @@ class Parser(
                         "cannot both have label statements and value statements"
                     )
                 labelStmts.forEach { stmt ->
-                    val phrase = stmt as Expr.Phrase
-                    if (phrase.args.isEmpty())
+                    val labelPhrase = stmt as Expr.Phrase
+                    if (labelPhrase.args.isEmpty())
                         throw parseError(
                             "label phrase body",
                             "cannot be empty"
                         )
-                    terms.add(phrase.target) // adds "label:"
-                    val body = Expr.Phrase(phrase.args) // adds "someFunc 1 2 3.."
-                    terms.add(body)
+                    terms.addAll(labelPhrase.terms)
                 }
             } else {
                 terms.addAll(valueStmts)
@@ -134,6 +132,13 @@ class Parser(
         val expr = if (terms.size > 1) Expr.Phrase(terms) else terms.first()
         returning("phrase", expr)
         return expr
+    }
+
+    private fun unary(): Expr {
+        if (consumeMaybe(MINUS)) {
+            return Expr.Unary(Expr.Operator(prevToken), unary())
+        }
+        return primary()
     }
 
     private fun primary(): Expr {

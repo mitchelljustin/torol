@@ -1,64 +1,16 @@
-import from: wasi_unstable
+include "std"
+
+import from: "wasi_unstable"
   fd_write fd iovec iovec_len num_written
-
-(a + b) =>
-  ~a
-  ~b
-  !i32.add
-
-(a - b) =>
-  ~a
-  ~b
-  !i32.sub
-
-store addr value =>
-  ~addr
-  ~value
-  !i32.store
-
-(addr <- value) =>
-  store ~addr ~value
-
-load addr =>
-  ~addr
-  !i32.load
-
-next ptr => ~ptr + 4
-
-drop => !drop
-
-string.len string => load string
-string.ptr string => next string
-
-string.store addr string =
-  addr <- string.ptr string
-  (next addr) <- string.len string
-  ()
-
-stdout => 1
 
 print message =
   iovec = 0x1000
+  iovec_len = 1
   string.store iovec message
   written = iovec + 8
-  _ = fd_write stdout iovec 1 written
-  ()
+  () = fd_write Stdout iovec iovec_len written
 
-false => 0
-true => 1
-
-if cond then: thenBody else: elseBody =>
-  ~cond
-  !if
-  ~thenBody
-  !else
-  ~elseBody
-  !end
-
-if cond then: thenBody => if ~cond then: ~thenBody else: ()
-
-if cond ..thenBody => if ~cond then: ~thenBody
-
-if true
-  print "hello catac!\n"
-  print "i'm back!\n"
+if (a != b)
+  then:
+    print "hello catac!\n"
+    print "i'm back!\n"

@@ -15,12 +15,19 @@ open class Expr {
                 is Sexp.Literal
                 -> visit(expr)
 
-                is Sequence -> visit(Sequence(expr.exprs.map(::transform)))
+                is Sequence -> visit(Sequence(expr.stmts.map(::transform)))
                 is Binary -> visit(
                     Binary(
                         transform(expr.lhs),
                         expr.operator,
                         transform(expr.rhs)
+                    )
+                )
+
+                is Unary -> visit(
+                    Unary(
+                        expr.operator,
+                        transform(expr.body),
                     )
                 )
 
@@ -119,7 +126,7 @@ open class Expr {
         }
 
         data class Unquote(val body: Expr) : Sexp() {
-            override fun toString() = "~${body}"
+            override fun toString() = "~$body"
         }
 
         class Linebreak : Sexp() {
@@ -127,11 +134,11 @@ open class Expr {
         }
     }
 
-    data class Sequence(val exprs: List<Expr>, val topLevel: Boolean = false) : Expr() {
-        override val returns get() = (exprs.lastOrNull()?.returns ?: false) && !topLevel
+    data class Sequence(val stmts: List<Expr>, val topLevel: Boolean = false) : Expr() {
+        override val returns = (stmts.lastOrNull()?.returns ?: false) && !topLevel
         override fun toString(): String = buildString {
             append("Sequence(")
-            append(exprs.joinToString(","))
+            append(stmts.joinToString(","))
             append(")")
         }
     }
@@ -139,11 +146,16 @@ open class Expr {
     data class Operator(val operator: Token) : Expr()
 
     data class Assignment(val target: Expr, val operator: Operator, val value: Expr) : Expr() {
+        override val returns = false
         val terms get() = listOf(operator, target, value)
     }
 
     data class Binary(val lhs: Expr, val operator: Operator, val rhs: Expr) : Expr() {
         val terms get() = listOf(operator, lhs, rhs)
+    }
+
+    data class Unary(val operator: Operator, val body: Expr) : Expr() {
+        val terms get() = listOf(operator, body)
     }
 
     data class Assembly(val body: Sexp) : Expr()

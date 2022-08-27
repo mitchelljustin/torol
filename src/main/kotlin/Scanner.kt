@@ -58,7 +58,6 @@ class Scanner(
             '"' -> string()
             '\n' -> newline()
             ' ' -> {}
-            '-' -> number()
             in SYMBOLS_DOUBLE -> doubleSymbol(char)
             in SYMBOLS_SINGLE -> addToken(SYMBOLS_SINGLE[char]!!)
             in LETTERS -> identifierOrLabel()
@@ -111,15 +110,6 @@ class Scanner(
 
     private fun number() {
         val value = when {
-            prevChar == '-' -> {
-                consumeAll(DIGITS)
-                if (lexeme.length == 1) {
-                    addToken(MINUS)
-                    return
-                }
-                lexeme.toInt()
-            }
-
             prevChar == '0' && checkAndConsume('x') -> {
                 consumeAll(DIGITS)
                 lexeme.substring(2).toInt(16)

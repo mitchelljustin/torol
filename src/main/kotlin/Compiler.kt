@@ -142,6 +142,11 @@ class Compiler(
         when (expr.operator.operator.type) {
             EQUAL_GREATER -> {}
             EQUAL -> when (expr.target) {
+                is Expr.Nil -> {
+                    generate(expr.value)
+                    function.add("drop")
+                }
+
                 is Expr.Ident -> genVariableDef(expr.target, expr.value)
                 is Expr.Phrase -> genFunctionDef(expr.target, expr.value)
                 else -> error("genAssignment", "illegal target for assignment", expr.target)
@@ -153,16 +158,17 @@ class Compiler(
 
 
     private fun genVariableDef(target: Expr.Ident, value: Expr) {
+        generate(value)
+
         val name = target.name.id()
         val local = "$name i32" // TODO: types
         if (local !in function.locals)
             function.locals.add(local)
-        generate(value)
         function.add("local.set", name)
     }
 
-    private fun genFunctionDef(expr: Expr.Phrase, body: Expr) {
-        val pattern = Pattern.Definition(expr.terms)
+    private fun genFunctionDef(target: Expr.Phrase, body: Expr) {
+        val pattern = Pattern.Definition(target.terms)
         val params = pattern.terms
             .filterIsInstance<Pattern.Term.Any>()
             .map {
@@ -181,7 +187,7 @@ class Compiler(
     }
 
     private fun genSequence(expr: Expr.Sequence) {
-        expr.exprs.forEachIndexed { i, stmt ->
+        expr.stmts.forEachIndexed { i, stmt ->
             generate(stmt)
         }
     }
