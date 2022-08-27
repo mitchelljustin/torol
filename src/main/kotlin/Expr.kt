@@ -45,7 +45,7 @@ open class Expr {
                 is Grouping -> visit(Grouping(transform(expr.body)))
                 is Quote -> visit(Quote(transform(expr.body)))
                 is Unquote -> visit(Unquote(transform(expr.body)))
-                is Sexp.List -> visit(Sexp.List(expr.terms.map(::transform)))
+                is Sexp.List -> visit(Sexp.List(expr.terms.map { transform(it) as Sexp }, parens = expr.parens))
                 else -> throw Exception("unsupported expr for transform(): $expr")
             }
         }
@@ -73,6 +73,7 @@ open class Expr {
     }
 
     abstract class Sexp : Expr() {
+        abstract fun render(): String
 
         open class Builder {
             internal val terms = arrayListOf<Sexp>()
@@ -89,7 +90,7 @@ open class Expr {
                 add(Linebreak())
             }
 
-            internal fun toSexp() = List(terms)
+            internal open fun compile(): Sexp = List(terms, parens = false)
         }
 
         companion object {
@@ -102,35 +103,35 @@ open class Expr {
             }
 
             fun from(vararg terms: Any?) = from(terms.toList())
-
-            fun build(f: Builder.() -> Unit): List {
-                val builder = Builder()
-                builder.f()
-                return builder.toSexp()
-            }
         }
 
         data class Ident(val name: String) : Sexp() {
-            override fun toString() = name
+            override fun render() = name
         }
 
         data class Literal(val value: Any) : Sexp() {
-            override fun toString() = when (value) {
+            override fun render() = when (value) {
                 is String -> value.literal()
                 else -> value.toString()
             }
         }
 
-        data class List(val terms: kotlin.collections.List<Expr>) : Sexp() {
-            override fun toString() = "(${terms.joinToString(" ")})"
+        data class List(val terms: kotlin.collections.List<Sexp>, val parens: Boolean = true) : Sexp() {
+            override fun render(): String {
+                val inner = terms.joinToString(" ") { it.render() }
+                return when (parens) {
+                    true -> "($inner)"
+                    false -> inner
+                }
+            }
         }
 
         data class Unquote(val body: Expr) : Sexp() {
-            override fun toString() = "~$body"
+            override fun render() = "~$body"
         }
 
         class Linebreak : Sexp() {
-            override fun toString() = "\n "
+            override fun render() = "\n "
         }
     }
 
@@ -163,8 +164,6 @@ open class Expr {
     data class Phrase(val terms: List<Expr>) : Expr() {
         val target = terms.first()
         val args = terms.drop(1)
-
-        constructor(target: Expr, args: List<Expr>) : this(listOf(target) + args)
 
         override fun toString(): String {
             val inner = terms.joinToString(", ")

@@ -20,7 +20,9 @@ class Token(val type: Type, val lexeme: String, val pos: Pos, val value: Any? = 
 
         // binary operators
         PLUS("+"), MINUS("-"), SLASH("/"), STAR("*"),
+        PLUS_EQUAL("+="), MINUS_EQUAL("-="), SLASH_EQUAL("/="), STAR_EQUAL("*="),
         EQUAL_EQUAL("=="), BANG_EQUAL("!="),
+        GREATER(">"), GREATER_EQUAL(">="), LESS("<"), LESS_EQUAL("<="),
 
         // WASM operators
         DOT("."), DOLLAR("$"),

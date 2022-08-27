@@ -101,8 +101,8 @@ open class Pattern(
 
         operator fun get(search: Search): Value? {
             val entries = entries(search.lead)
-            val entry = entries.find { entry -> entry.pattern.matchArgs(search) }
-            return entry?.value
+            val entry = entries.find { entry -> entry.pattern.matchArgs(search) } ?: return null
+            return entry.value
         }
 
         operator fun set(definition: Definition, value: Value) {

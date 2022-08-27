@@ -9,7 +9,7 @@ object Assembly {
     open class Section : Sexp.Builder() {
         open fun writeTo(writer: Writer) {
             terms.forEach { term ->
-                writer.write(term.toString())
+                writer.write(term.render())
                 writer.write("\n")
             }
         }
@@ -22,34 +22,34 @@ object Assembly {
         val returns: Boolean = false,
         val export: String? = null,
     ) : Section() {
-        private fun compile(): Sexp {
-            val body = terms
-            return Sexp.build {
-                add("func")
-                add(name.id())
-                if (export != null) {
-                    add("export", export.literal())
-                }
-                params.forEach { param ->
-                    add("param", param)
-                }
-                if (returns) {
-                    add("result", "i32")
-                }
-                locals.forEach { local ->
-                    add("local", local)
-                }
-                linebreak()
-                body.forEach { stmt ->
-                    add(stmt)
-                    linebreak()
-                }
+        override fun compile(): Sexp {
+            val body = terms.toList()
+            terms.clear()
+            add("func")
+            add(name.id())
+            if (export != null) {
+                add("export", export.literal())
             }
+            params.forEach { param ->
+                add("param", param)
+            }
+            if (returns) {
+                add("result", "i32")
+            }
+            locals.forEach { local ->
+                add("local", local)
+            }
+            linebreak()
+            body.forEach { stmt ->
+                add(stmt)
+                linebreak()
+            }
+            return Sexp.List(terms, parens = true)
         }
 
 
         override fun writeTo(writer: Writer) {
-            val assembly = compile().toString()
+            val assembly = compile().render()
             writer.write(assembly)
         }
     }

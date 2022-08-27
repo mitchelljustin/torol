@@ -193,7 +193,7 @@ class Compiler(
     }
 
     private fun genAssembly(expr: Expr.Assembly) {
-        val target = when (expr.body) {
+        val section = when (expr.body) {
             is Sexp.List -> when (expr.body.terms.first()) {
                 Sexp.Ident("import") -> meta
                 else -> function
@@ -201,6 +201,6 @@ class Compiler(
 
             else -> function
         }
-        target.add(expr.body)
+        section.add(expr.body)
     }
 }

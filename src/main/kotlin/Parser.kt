@@ -10,7 +10,12 @@ class Parser(
 
     companion object {
         val AssignmentOperators = setOf(EQUAL, EQUAL_GREATER, LARROW, RARROW)
-        val BinaryOperators = setOf(PLUS, MINUS, STAR, SLASH, EQUAL_EQUAL, BANG_EQUAL)
+        val BinaryOperators = setOf(
+            PLUS, MINUS, STAR, SLASH,
+            EQUAL_EQUAL, BANG_EQUAL,
+            GREATER, GREATER_EQUAL, LESS, LESS_EQUAL,
+            PLUS_EQUAL, MINUS_EQUAL, SLASH_EQUAL, STAR_EQUAL,
+        )
         val Operators = AssignmentOperators + BinaryOperators
         val Literals = setOf(STRING, NUMBER)
 
@@ -85,11 +90,20 @@ class Parser(
 
     private fun assembly(): Expr {
         mark("assembly")
-        val expr =
-            if (present(BANG)) {
-                consume(BANG, where = "before assembly")
-                Expr.Assembly(sexp())
-            } else phrase()
+        val expr = when {
+            consumeMaybe(BANG, where = "before assembly") -> {
+                val sexps = arrayListOf(sexp())
+                while (!present(NEWLINE, DEDENT, INDENT))
+                    sexps.add(sexp())
+                val body = when (sexps.size) {
+                    1 -> sexps.first()
+                    else -> Expr.Sexp.List(sexps, parens = false)
+                }
+                Expr.Assembly(body)
+            }
+
+            else -> phrase()
+        }
         returning("assembly", expr)
         return expr
     }
@@ -97,38 +111,33 @@ class Parser(
     private fun phrase(): Expr {
         mark("phrase")
         val terms = arrayListOf(unary())
+        if (terms.first() is Expr.Label) {
+            terms.add(binary())
+            return Expr.Phrase(terms)
+        }
 
         while (!present(RPAREN, DEDENT, INDENT, NEWLINE, EOF, *Operators.toTypedArray())) {
-            mark("appending to phrase: primary")
+            mark("adding to phrase: primary")
             val term = unary()
             terms.add(term)
         }
         if (startOfSequence()) {
-            mark("appending to phrase: final sequence")
+            mark("adding to phrase: final sequence")
             val finalSequence = sequence()
-            val (labelStmts, valueStmts) = finalSequence.stmts.partition { stmt ->
-                stmt is Expr.Phrase && stmt.target is Expr.Label
-            }
-            if (labelStmts.isNotEmpty()) {
-                if (valueStmts.isNotEmpty())
-                    throw parseError(
-                        "phrase final sequence",
-                        "cannot both have label statements and value statements"
-                    )
-                labelStmts.forEach { stmt ->
-                    val labelPhrase = stmt as Expr.Phrase
-                    if (labelPhrase.args.isEmpty())
-                        throw parseError(
-                            "label phrase body",
-                            "cannot be empty"
+            finalSequence.stmts.forEach { stmt ->
+                when {
+                    stmt is Expr.Phrase && stmt.target is Expr.Label -> {
+                        if (stmt.terms.size != 2) throw parseError(
+                            "phrase label statement",
+                            "must have exactly one arg"
                         )
-                    terms.addAll(labelPhrase.terms)
+                        terms.addAll(stmt.terms)
+                    }
+
+                    else -> terms.add(stmt)
                 }
-            } else {
-                terms.addAll(valueStmts)
             }
         }
-
         val expr = if (terms.size > 1) Expr.Phrase(terms) else terms.first()
         returning("phrase", expr)
         return expr
@@ -287,14 +296,11 @@ class Parser(
     }
 
 
-    private fun consumeAny(vararg types: Token.Type, where: String = "") {
+    private fun consumeWhitespace(where: String) {
+        val types = arrayOf(NEWLINE, DEDENT, INDENT)
         report("consuming any ${types.joinToString("|")} $where")
         while (present(*types))
             consume(*types, where = where)
-    }
-
-    private fun consumeWhitespace(where: String) {
-        consumeAny(NEWLINE, DEDENT, INDENT, where = where)
     }
 
     private fun consume(vararg types: Token.Type, where: String = "") = consume(types.toSet(), where)

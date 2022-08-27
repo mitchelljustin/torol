@@ -16,7 +16,7 @@ class Expander {
     private var scope = global
 
 
-    fun expand(expr: Expr): Expr = Expr.transform(expr) { expr ->
+    fun expand(input: Expr): Expr = Expr.transform(input) { expr ->
         when (expr) {
             is Expr.Assignment -> when (expr.operator.operator.type) {
                 EQUAL_GREATER -> {
@@ -109,12 +109,12 @@ class Expander {
         //   fd_write fd iovec iovec_len num_written
 
         val items = expr.args.drop(2)
-        return Expr.Sequence(items.map {
+        return Expr.Sequence(items.map { item ->
             Expr.Assembly(
                 Sexp.from(
                     "import",
                     module.literal(),
-                    *importFunc(it),
+                    *importFunc(item),
                 )
             )
         })
@@ -179,7 +179,7 @@ class Expander {
         scope.define(pattern, Macro(pattern, value))
     }
 
-    private fun substitute(expr: Expr): Expr = Expr.transform(expr) { expr ->
+    private fun substitute(input: Expr): Expr = Expr.transform(input) { expr ->
         when (expr) {
             is Expr.Unquote -> {
                 if (expr.body !is Expr.Ident)
