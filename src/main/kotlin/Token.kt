@@ -9,20 +9,23 @@ class Token(val type: Type, val lexeme: String, val pos: Pos, val value: Any? = 
         NEWLINE("\n"),
 
         // grouping operators
-        LPAREN("("), RPAREN(")"), LSQUARE("["), RSQUARE("]"),
+        LPAREN("("), RPAREN(")"),
 
-        // special operators
-        TILDE("~"), BANG("!"), STAR("*"),
+        // meta operators
+        TILDE("~"), BANG("!"),
 
         // assignment operators
         EQUAL("="), EQUAL_GREATER("=>"),
-
-        // user operators
         RARROW("->"), LARROW("<-"),
-        PLUS("+"), MINUS("-"), SLASH("/"),
+
+        // binary operators
+        PLUS("+"), MINUS("-"), SLASH("/"), STAR("*"),
 
         // WASM operators
         DOT("."), DOLLAR("$"),
+
+        // multi operator
+        DOT_DOT(".."),
 
         INDENT, DEDENT,
 
@@ -30,11 +33,7 @@ class Token(val type: Type, val lexeme: String, val pos: Pos, val value: Any? = 
 
         IDENT, STRING, NUMBER,
 
-        EOF;
-
-        companion object {
-            val OPERATORS = setOf("-", "+", "/", "*")
-        }
+        EOF
     }
 
     override fun toString() = "$type(${lexeme.trim()})"

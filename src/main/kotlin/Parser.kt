@@ -30,6 +30,7 @@ class Parser(
     }
 
     private var derivation = StringBuilder()
+    private var stepNo = 0
     private var current = 0
     private val curToken get() = tokens[current]
     private val prevToken get() = tokens[current - 1]
@@ -106,7 +107,7 @@ class Parser(
             mark("appending to phrase: final sequence")
             val finalSequence = sequence()
             val (labelStmts, valueStmts) = finalSequence.exprs.partition { stmt ->
-                stmt is Expr.Phrase && stmt.target is Expr.Label && stmt.terms.size == 2
+                stmt is Expr.Phrase && stmt.target is Expr.Label
             }
             if (labelStmts.isNotEmpty()) {
                 if (valueStmts.isNotEmpty())
@@ -114,8 +115,16 @@ class Parser(
                         "phrase final sequence",
                         "cannot both have label statements and value statements"
                     )
-                labelStmts.forEach {
-                    terms += (it as Expr.Phrase).terms // adds "label: value"
+                labelStmts.forEach { stmt ->
+                    val phrase = stmt as Expr.Phrase
+                    if (phrase.args.isEmpty())
+                        throw parseError(
+                            "label phrase body",
+                            "cannot be empty"
+                        )
+                    terms.add(phrase.target) // adds "label:"
+                    val body = Expr.Phrase(phrase.args) // adds "someFunc 1 2 3.."
+                    terms.add(body)
                 }
             } else {
                 terms.addAll(valueStmts)
@@ -135,7 +144,7 @@ class Parser(
             present(LPAREN) -> grouping()
             present(TILDE) -> unquote()
             present(LABEL) -> label()
-            present(STAR) -> multi()
+            present(DOT_DOT) -> multi()
             startOfSequence() -> sequence()
             else -> throw parseError("primary", "illegal primary expression")
         }
@@ -144,7 +153,7 @@ class Parser(
     }
 
     private fun multi(): Expr.Multi {
-        consume(STAR, where = "vararg()")
+        consume(DOT_DOT, where = "multi()")
         val body = primary()
         return Expr.Multi(body)
     }
@@ -252,7 +261,8 @@ class Parser(
     // --- Utility functions ---
 
     private fun report(msg: String) {
-        derivation.append("-- $msg\n")
+        derivation.append("${stepNo.toString().padStart(5, '0')} -- $msg\n")
+        stepNo++
     }
 
     private fun mark(where: String) {

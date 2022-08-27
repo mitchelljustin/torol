@@ -11,7 +11,6 @@ class Compiler(
     private var outFile: File? = null,
     private val verbose: Boolean = false
 ) {
-
     class CodeGenException(where: String, message: String, extra: Any?) :
         CompilerException(buildString {
             append("[in ")
@@ -23,6 +22,7 @@ class Compiler(
             if (extra != null)
                 append(" ${extra::class.simpleName}")
         })
+
 
     private val errors = ArrayList<CodeGenException>()
     private val expander = Expander()
@@ -45,9 +45,9 @@ class Compiler(
         var program = Parser.parse(input.readText(), verbose)
         program = expander.expand(program)
         generate(program)
-        errors.forEach { err -> println("!! $err") }
-        if (errors.isEmpty())
-            finish()
+        if (errors.isNotEmpty())
+            throw CompilerException.Multi(errors)
+        finish()
     }
 
     private fun finish() {
@@ -73,7 +73,8 @@ class Compiler(
             is Expr.Assembly -> genAssembly(expr)
             is Expr.Sequence -> genSequence(expr)
             is Expr.Assignment -> genAssignment(expr)
-            is Expr.Binary -> error("generate", "binary ops must be defined and called as macros", expr)
+            is Expr.Binary -> errOnlyInMacros("binary expressions", expr)
+            is Expr.Multi -> errOnlyInMacros("splat operators", expr)
             is Expr.Literal -> genLiteral(expr)
             is Expr.Phrase -> genCall(expr)
             is Expr.Ident -> genVariable(expr)
@@ -81,6 +82,10 @@ class Compiler(
             is Expr.Nil -> genNil()
             else -> error("generate", "illegal expr type", expr)
         }
+    }
+
+    private fun errOnlyInMacros(what: String, expr: Expr) {
+        error("generate", "$what may only appear in macros", expr)
     }
 
     private fun genNil() {
@@ -100,8 +105,8 @@ class Compiler(
             return
         }
         expr.args.forEach(::generate)
-        val pattern = Pattern.forSearch(expr.terms)
-        val name = pattern.name().id()
+        val pattern = Pattern.Search(expr.terms)
+        val name = pattern.name.id()
         function.add("call", name)
     }
 
@@ -157,7 +162,7 @@ class Compiler(
     }
 
     private fun genFunctionDef(expr: Expr.Phrase, body: Expr) {
-        val pattern = Pattern.forDefinition(expr.terms)
+        val pattern = Pattern.Definition(expr.terms)
         val params = pattern.terms
             .filterIsInstance<Pattern.Term.Any>()
             .map {
@@ -165,7 +170,7 @@ class Compiler(
                 "$name i32"
             }
         val newFunction = Assembly.Function(
-            name = pattern.name(),
+            name = pattern.name,
             params,
             returns = body.returns,
         )

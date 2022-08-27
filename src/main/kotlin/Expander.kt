@@ -10,7 +10,7 @@ class Expander {
     class MacroException(where: String, message: String, expr: Expr?) :
         CompilerException("[$where] $message: $expr")
 
-    data class Macro(val pattern: Pattern, val substitution: Expr)
+    data class Macro(val pattern: Pattern.Definition, val substitution: Expr)
 
     private val global = Scope<Macro>(null)
     private var scope = global
@@ -41,7 +41,7 @@ class Expander {
             }
 
             is Expr.Ident -> {
-                val pattern = Pattern.forName(expr.name)
+                val pattern = Pattern.Search(expr.name)
                 findMacro(pattern)?.substitution
             }
 
@@ -50,12 +50,12 @@ class Expander {
     }
 
     private fun expandMacroCall(terms: List<Expr>): Expr? {
-        val searchPat = Pattern.forSearch(terms)
+        val searchPat = Pattern.Search(terms)
         val macro = findMacro(searchPat) ?: return null
         val (pattern, substitution) = macro
         return withNewScope {
             pattern.bind(terms).forEach { (name, expr) ->
-                addMacro(Pattern.forName(name), expr)
+                addMacro(Pattern.Definition(name), expr)
             }
             substitute(substitution)
         }
@@ -84,12 +84,12 @@ class Expander {
                     )
                 val terms = expr.terms.map { (it as Expr.Ident).name }
                 val name = terms.first()
-                val pattern = Pattern.forDefinition(expr.terms)
+                val pattern = Pattern.Definition(expr.terms)
                 val args = terms.drop(1)
                 val params = args.map { arg -> Sexp.from("param", arg.id(), "i32") }
                 val func = Sexp.from(
                     "func",
-                    pattern.name().id(),
+                    pattern.name.id(),
                     *params.toTypedArray(),
                     Sexp.from("result", "i32"),
                 )
@@ -141,15 +141,15 @@ class Expander {
         return expand(program)
     }
 
-    private fun findMacro(pattern: Pattern) = scope.resolve(pattern)
+    private fun findMacro(pattern: Pattern.Search) = scope.resolve(pattern)
 
     private fun defineMacro(target: Expr, value: Expr) {
         val pattern = when (target) {
-            is Expr.Ident -> Pattern.forName(target.name)
+            is Expr.Ident -> Pattern.Definition(target.name)
             is Expr.Phrase -> {
                 if (target.target !is Expr.Ident)
                     throw MacroException("defineMacro", "target must start with Ident", target.target)
-                Pattern.forDefinition(target.terms)
+                Pattern.Definition(target.terms)
             }
 
             is Expr.Grouping -> {
@@ -162,7 +162,7 @@ class Expander {
                         target
                     )
                 }
-                Pattern.forDefinition(terms)
+                Pattern.Definition(terms)
             }
 
             else ->
@@ -173,7 +173,7 @@ class Expander {
         addMacro(pattern, value)
     }
 
-    private fun addMacro(pattern: Pattern, value: Expr) {
+    private fun addMacro(pattern: Pattern.Definition, value: Expr) {
         scope.define(pattern, Macro(pattern, value))
     }
 

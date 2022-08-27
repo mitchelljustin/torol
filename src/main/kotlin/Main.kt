@@ -13,12 +13,7 @@ class CLI : CliktCommand() {
         .file(canBeDir = false)
 
     override fun run() {
-        try {
-            Compiler(file, outFile, verbose).compile()
-        } catch (exc: CompilerException) {
-            println("!! ${exc::class.simpleName} ${exc.message}\n${exc.stackTrace}")
-            throw exc
-        }
+        Compiler(file, outFile, verbose).compile()
     }
 }
 
