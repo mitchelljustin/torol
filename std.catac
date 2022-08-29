@@ -57,6 +57,10 @@
 
 (- a) => (0 - ~a)
 
+not a =>
+  ~a
+  !i32.eqz
+
 store addr value inst:inst =>
   ~addr
   ~value
@@ -88,20 +92,39 @@ if cond then: thenBody else: elseBody =>
   ~elseBody
   !end
 
-if cond then: thenBody => if ~cond then: ~thenBody else: ()
+if cond then: body => if ~cond then: ~body else: ()
 
-if cond ..thenBody => if ~cond then: ~thenBody
+if cond ..body => if ~cond then: ~body
 
-for i from:start until:end ..body =>
-  ~i = ~start
+unless cond ..body => if (not ~cond) ~body
+
+for init:init cond:cond update:update body:body =>
+  ~init
   !loop $loop
   ~body
-  ~i += 1
-  ~i < ~end
+  ~update
+  ~cond
   !(br_if $loop)
   !end
 
-for i from:start through:end ..body => for ~i from:~start until:(~end + 1) ~body
+
+for i from:start until:end ..body =>
+  for
+    init:
+      ~i = ~start
+    cond:
+      ~i < ~end
+    update:
+      ~i += 1
+    body:
+      ~body
+
+while cond ..body =>
+  for
+    init: ()
+    cond: ~cond
+    update: ()
+    body: ~body
 
 import from: "wasi_unstable"
   fd_write fd iovec iovec_len num_written
@@ -110,8 +133,10 @@ string.store iovec string =
   store32 \ iovec \ string.ptr string
   store32 \ iovec + 4 \ string.len string
 
+memory = 0x00
+
 print message =
-  iovec = 0x1000
+  iovec = 0
   iovec_len = 1
   string.store iovec message
   written = iovec + 8

@@ -43,7 +43,6 @@ open class Expr {
                 is Assembly -> visit(Assembly(transform(expr.body) as Sexp))
                 is Phrase -> visit(Phrase(expr.terms.map(::transform)))
                 is Grouping -> visit(Grouping(transform(expr.body)))
-                is Quote -> visit(Quote(transform(expr.body)))
                 is Unquote -> visit(Unquote(transform(expr.body)))
                 is Sexp.List -> visit(Sexp.List(expr.terms.map { transform(it) as Sexp }, parens = expr.parens))
                 else -> throw Exception("unsupported expr for transform(): $expr")
@@ -55,21 +54,26 @@ open class Expr {
 
     class Nil : Expr() {
         override val returns = false
-        override fun toString() = "Nil"
+        override fun toString() = "()"
     }
 
-    data class Multi(val body: Expr) : Expr()
+    data class Multi(val body: Expr) : Expr() {
+        override fun toString() = "..$body"
+    }
 
     data class Ident(val name: String) : Expr() {
-        override fun toString() = "Ident($name)"
+        override fun toString() = name
     }
 
     data class Label(val name: String) : Expr() {
-        override fun toString() = "Label($name)"
+        override fun toString() = "$name:"
     }
 
     data class Literal(val literal: Any) : Expr() {
-        override fun toString() = "Literal($literal)"
+        override fun toString() = when (literal) {
+            is String -> literal.literal()
+            else -> literal.toString()
+        }
     }
 
     abstract class Sexp : Expr() {
@@ -107,6 +111,7 @@ open class Expr {
 
         data class Ident(val name: String) : Sexp() {
             override fun render() = name
+            override fun toString() = render()
         }
 
         data class Literal(val value: Any) : Sexp() {
@@ -114,6 +119,9 @@ open class Expr {
                 is String -> value.literal()
                 else -> value.toString()
             }
+
+            override fun toString() = render()
+
         }
 
         data class List(val terms: kotlin.collections.List<Sexp>, val parens: Boolean = true) : Sexp() {
@@ -124,58 +132,73 @@ open class Expr {
                     false -> inner
                 }
             }
+
+            override fun toString() = render()
+
         }
 
         data class Unquote(val body: Expr) : Sexp() {
             override fun render() = "~$body"
+            override fun toString() = render()
+
         }
 
         class Linebreak : Sexp() {
             override fun render() = "\n "
+            override fun toString() = render()
+
         }
     }
 
     data class Sequence(val stmts: List<Expr>, val topLevel: Boolean = false) : Expr() {
         override val returns = (stmts.lastOrNull()?.returns ?: false) && !topLevel
         override fun toString(): String = buildString {
-            append("Sequence(")
-            append(stmts.joinToString(","))
-            append(")")
+            append("[ ")
+            append(stmts.joinToString("; "))
+            append(" ]")
         }
     }
 
-    data class Operator(val operator: Token) : Expr()
+    data class Operator(val operator: Token) : Expr() {
+        override fun toString() = operator.lexeme
+    }
 
     data class Assignment(val target: Expr, val operator: Operator, val value: Expr) : Expr() {
         override val returns = false
         val terms get() = listOf(operator, target, value)
+        override fun toString() = "$target $operator $value"
     }
 
     data class Binary(val lhs: Expr, val operator: Operator, val rhs: Expr) : Expr() {
         val terms get() = listOf(operator, lhs, rhs)
+        override fun toString() = "‹$lhs $operator $rhs›"
+
     }
 
     data class Unary(val operator: Operator, val body: Expr) : Expr() {
         val terms get() = listOf(operator, body)
+
+        override fun toString() = "$operator $body"
     }
 
-    data class Assembly(val body: Sexp) : Expr()
+    data class Assembly(val body: Sexp) : Expr() {
+        override fun toString() = "!$body"
+    }
 
     data class Phrase(val terms: List<Expr>) : Expr() {
         val target = terms.first()
         val args = terms.drop(1)
 
-        override fun toString(): String {
-            val inner = terms.joinToString(" ")
-            return "Phrase($inner})"
-        }
+        override fun toString(): String = "‹${terms.joinToString(" ")}›"
     }
 
-    data class Grouping(val body: Expr) : Expr()
+    data class Grouping(val body: Expr) : Expr() {
+        override fun toString() = "($body)"
+    }
 
-    data class Quote(val body: Expr) : Expr()
-
-    data class Unquote(val body: Expr) : Expr()
+    data class Unquote(val body: Expr) : Expr() {
+        override fun toString() = "~$body"
+    }
 
 }
 

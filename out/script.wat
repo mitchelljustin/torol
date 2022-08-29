@@ -1,16 +1,35 @@
 (module
 (import "wasi_unstable" "fd_write" 
   (func $fd_write//4 (param $fd i32) (param $iovec i32) (param $iovec_len i32) (param $num_written i32) (result i32)))
-(data (i32.const 65536) "\06\00\00\00one!\n")
+(global $memory (mut i32) (i32.const 0))
+(global $i (mut i32) (i32.const 0))
+(data (i32.const 65536) "\04\00\00\00OK\n")
+(data (i32.const 65544) "\08\00\00\00not OK\n")
 (memory (export "memory") 2)
 (func $main (export "_start") 
-  (i32.const 1) 
-  (i32.const 1) 
-  i32.eq 
+  (i32.const 0) 
+  (global.set $memory) 
+  (i32.const 0) 
+  (global.set $i) 
+  loop $loop 
+  (global.get $i) 
+  (i32.const 3) 
+  i32.lt_s 
   if 
   (i32.const 65536) 
   (call $print//1) 
   else 
+  (i32.const 65544) 
+  (call $print//1) 
+  end 
+  (global.get $i) 
+  (i32.const 1) 
+  i32.add 
+  (global.set $i) 
+  (global.get $i) 
+  (i32.const 10) 
+  i32.lt_s 
+  (br_if $loop) 
   end 
  )
 
@@ -29,7 +48,7 @@
  )
 
 (func $print//1 (param $message i32) (local $iovec i32) (local $iovec_len i32) (local $written i32) 
-  (i32.const 4096) 
+  (i32.const 0) 
   (local.set $iovec) 
   (i32.const 1) 
   (local.set $iovec_len) 

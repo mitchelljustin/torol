@@ -12,8 +12,8 @@ class Expander {
 
     data class Macro(val pattern: Pattern.Definition, val substitution: Expr)
 
-    private val global = Scope<Macro>(null)
-    private var scope = global
+    private val context = Context<Macro>()
+    val imports = ArrayList<Pattern.Definition>()
 
 
     fun expand(input: Expr): Expr = Expr.transform(input) { expr ->
@@ -21,7 +21,7 @@ class Expander {
             is Expr.Assignment -> when (expr.operator.operator.type) {
                 EQUAL_GREATER -> {
                     defineMacro(expr.target, expr.value)
-                    null
+                    Expr.Nil()
                 }
 
                 EQUAL -> null
@@ -54,7 +54,7 @@ class Expander {
         val searchPat = Pattern.Search(terms)
         val macro = findMacro(searchPat) ?: return null
         val (pattern, substitution) = macro
-        return withNewScope {
+        return context.withNewScope {
             pattern.bind(terms).forEach { (name, expr) ->
                 addMacro(Pattern.Definition(name), expr)
             }
@@ -86,6 +86,7 @@ class Expander {
                 val terms = expr.terms.map { (it as Expr.Ident).name }
                 val name = terms.first()
                 val pattern = Pattern.Definition(expr.terms)
+                imports.add(pattern)
                 val args = terms.drop(1)
                 val params = args.map { arg -> Sexp.from("param", arg.id(), "i32") }
                 val func = Sexp.from(
@@ -120,15 +121,6 @@ class Expander {
         })
     }
 
-    private fun <T> withNewScope(func: () -> T): T {
-        val originalScope = scope
-        scope = Scope(scope)
-        val result = func()
-        scope = scope.enclosing!!
-        if (scope !== originalScope)
-            throw Exception("scopes dont match")
-        return result
-    }
 
     private fun expandInclude(expr: Expr.Phrase): Expr {
         if (expr.args.size != 1)
@@ -142,7 +134,7 @@ class Expander {
         return expand(program)
     }
 
-    private fun findMacro(pattern: Pattern.Search) = scope.resolve(pattern)
+    private fun findMacro(pattern: Pattern.Search) = context.resolve(pattern)
 
     private fun defineMacro(target: Expr, value: Expr) {
         val pattern = when (target) {
@@ -170,13 +162,13 @@ class Expander {
             else ->
                 throw MacroException("defineMacro", "target must be Phrase or Ident", target)
         }
-        if (pattern in scope)
+        if (pattern in context)
             throw MacroException("defineMacro", "macro already exists: $pattern", target)
         addMacro(pattern, value)
     }
 
     private fun addMacro(pattern: Pattern.Definition, value: Expr) {
-        scope.define(pattern, Macro(pattern, value))
+        context.define(pattern, Macro(pattern, value))
     }
 
     private fun substitute(input: Expr): Expr = Expr.transform(input) { expr ->
@@ -185,7 +177,7 @@ class Expander {
                 if (expr.body !is Expr.Ident)
                     throw MacroException("subUnquotes", "unquote body must be an Ident", expr.body)
                 val name = expr.body.name
-                scope.resolve(name)?.substitution ?: throw MacroException(
+                context.resolve(Pattern.Search(name))?.substitution ?: throw MacroException(
                     "subUnquotes",
                     "no expr to substitute for '$name'",
                     expr

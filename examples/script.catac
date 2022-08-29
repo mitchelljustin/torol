@@ -1,4 +1,6 @@
 include "std"
 
-for i from: 0 through: 9
-  if \ i == 1 \ then: print "one!\n"
+for i from: 0 until: 10
+  if \ i < 3 \
+    then: print "OK\n"
+    else: print "not OK\n"

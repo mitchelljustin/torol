@@ -11,6 +11,19 @@ class Compiler(
     private var outFile: File? = null,
     private val verbose: Boolean = false
 ) {
+    abstract class Referent(
+        val pattern: Pattern,
+    ) {
+        enum class Scope(val asmPrefix: String) {
+            Local("local"),
+            Global("global"),
+        }
+
+        class Variable(pattern: Pattern, val scope: Scope) : Referent(pattern)
+        class Function(pattern: Pattern) : Referent(pattern)
+
+    }
+
     class CodeGenException(where: String, message: String, extra: Any?) :
         CompilerException(buildString {
             append("[in ")
@@ -18,9 +31,11 @@ class Compiler(
             append("] ")
             append(message)
             append(": ")
-            append(extra)
-            if (extra != null)
-                append(" ${extra::class.simpleName}")
+            if (extra != null) {
+                append(extra)
+                append(" (${extra::class.simpleName})")
+            }
+
         })
 
 
@@ -28,22 +43,29 @@ class Compiler(
     private val expander = Expander()
 
     init {
-        outFile = outFile ?: File("./out/${input.nameWithoutExtension}.wat")
+        outFile = outFile ?: File("out/${input.nameWithoutExtension}.wat")
         outFile!!.createNewFile()
     }
 
     private val meta = Assembly.Section()
     private val main = Assembly.Function("main", export = "_start")
-    private val functions = arrayListOf(main)
+    private val functionSections = arrayListOf(main)
     private val functionStack = arrayListOf(main)
     private val function get() = functionStack.last()
     private val strings = HashMap<String, Int>()
     private var stringPtr = 0x1_0000
+    private val context = Context<Referent>()
+    private val variableScope: Referent.Scope
+        get() = when {
+            function === main -> Referent.Scope.Global
 
+            else -> Referent.Scope.Local
+        }
 
     fun compile() {
         var program = Parser.parse(input.readText(), verbose)
         program = expander.expand(program)
+        expander.imports.forEach(::addFunctionDef)
         generate(program)
         if (errors.isNotEmpty())
             throw CompilerException.Multi(errors)
@@ -55,12 +77,14 @@ class Compiler(
         outFile!!.printWriter().use { out ->
             out.write("(module\n")
             meta.writeTo(out)
-            functions.forEach { function ->
+            functionSections.forEach { function ->
                 function.writeTo(out)
                 out.write("\n\n")
             }
             out.write("\n)\n")
+            out.flush()
         }
+        println("Wrote assembly to ${outFile!!.absolutePath}")
     }
 
     private fun error(where: String, message: String, extra: Any? = null) {
@@ -77,8 +101,9 @@ class Compiler(
             is Expr.Multi -> errOnlyInMacros("splat operators", expr)
             is Expr.Literal -> genLiteral(expr)
             is Expr.Phrase -> genCall(expr)
-            is Expr.Ident -> genVariable(expr)
+            is Expr.Ident -> genVarRef(expr)
             is Expr.Grouping -> genGrouping(expr)
+            is Expr.Label -> error("generate", "illegal label outside of phrase", expr)
             is Expr.Nil -> genNil()
             else -> error("generate", "illegal expr type", expr)
         }
@@ -95,8 +120,13 @@ class Compiler(
         generate(expr.body)
     }
 
-    private fun genVariable(expr: Expr.Ident) {
-        function.add("local.get", expr.name.id())
+    private fun genVarRef(expr: Expr.Ident) {
+        val referent = context.resolve(Pattern.Search(expr.name)) as? Referent.Variable
+        if (referent == null) {
+            error("genVarRef", "undefined variable", expr)
+            return
+        }
+        function.add("${referent.scope.asmPrefix}.get", expr.name.id())
     }
 
     private fun genCall(expr: Expr.Phrase) {
@@ -106,6 +136,10 @@ class Compiler(
         }
         expr.args.forEach(::generate)
         val pattern = Pattern.Search(expr.terms)
+        if (pattern !in context) {
+            error("genCall", "undefined function or macro", pattern)
+            return
+        }
         val name = pattern.name.id()
         function.add("call", name)
     }
@@ -119,11 +153,11 @@ class Compiler(
     }
 
     private fun genStringLiteral(value: String) {
-        val ptr = strings[value] ?: newStringLiteral(value)
+        val ptr = strings[value] ?: addStringLiteral(value)
         genI32Const(ptr)
     }
 
-    private fun newStringLiteral(value: String): Int {
+    private fun addStringLiteral(value: String): Int {
         val ptr = stringPtr
         val len = value.length
         val hex32 = len.toString(16).padStart(8, '0')
@@ -159,31 +193,56 @@ class Compiler(
 
     private fun genVariableDef(target: Expr.Ident, value: Expr) {
         generate(value)
+        val id = target.name.id()
+        val pattern = Pattern.Definition(target.name)
+        when (variableScope) {
+            Referent.Scope.Global -> {
+                if (pattern !in context.global)
+                    meta.add("global", id, listOf("mut", "i32"), listOf("i32.const", "0"))
+                main.add("global.set", id)
+            }
 
-        val name = target.name.id()
-        val local = "$name i32" // TODO: types
-        if (local !in function.locals)
-            function.locals.add(local)
-        function.add("local.set", name)
+            Referent.Scope.Local -> {
+                if (pattern !in context)
+                    function.locals.add("$id i32")
+                function.add("local.set", id)
+            }
+        }
+
+        addVariableDef(pattern, variableScope)
     }
+
+    private fun addVariableDef(pattern: Pattern.Definition, scope: Referent.Scope) {
+        context.define(pattern, Referent.Variable(pattern, scope))
+    }
+
 
     private fun genFunctionDef(target: Expr.Phrase, body: Expr) {
         val pattern = Pattern.Definition(target.terms)
-        val params = pattern.terms
-            .filterIsInstance<Pattern.Term.Any>()
-            .map {
-                val name = it.binding?.id() ?: ""
-                "$name i32"
-            }
+        val params = pattern.terms.filterIsInstance<Pattern.Term.Any>().filter { it.binding != null }
+        val paramDefs = params.map { param ->
+            val name = param.binding!!.id()
+            "$name i32"
+        }
         val newFunction = Assembly.Function(
             name = pattern.name,
-            params,
+            paramDefs,
             returns = body.returns,
         )
+        addFunctionDef(pattern)
         functionStack.add(newFunction)
-        functions.add(newFunction)
-        generate(body)
+        functionSections.add(newFunction)
+        context.withNewScope {
+            params.forEach { param ->
+                addVariableDef(Pattern.Definition(param.binding!!), Referent.Scope.Local)
+            }
+            generate(body)
+        }
         functionStack.removeLast()
+    }
+
+    private fun addFunctionDef(pattern: Pattern.Definition) {
+        context.define(pattern, Referent.Function(pattern))
     }
 
     private fun genSequence(expr: Expr.Sequence) {

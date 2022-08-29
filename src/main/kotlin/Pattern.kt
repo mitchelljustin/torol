@@ -51,7 +51,7 @@ open class Pattern(
             is Expr.Operator -> Term.Exact(term.operator.lexeme)
             is Expr.Label -> Term.Label(term.name)
             is Expr.Ident -> if (i == 0) Term.Exact(term.name) else Term.Any(term.name)
-            else -> throw PatternException("illegal macro definition pattern term: $term")
+            else -> throw PatternException("illegal definition pattern term: $term")
         }
     }) {
         constructor(name: String) : this(listOf(Expr.Ident(name)))
@@ -99,9 +99,16 @@ open class Pattern(
 
         private fun entries(lead: String) = store.getOrPut(lead, ::arrayListOf)
 
-        operator fun get(search: Search): Value? {
-            val entries = entries(search.lead)
-            val entry = entries.find { entry -> entry.pattern.matchArgs(search) } ?: return null
+        operator fun get(pattern: Pattern): Value? {
+            val entries = entries(pattern.lead)
+            val entry = entries.find { entry ->
+                when (pattern) {
+                    is Search -> entry.pattern.matchArgs(pattern)
+                    is Definition -> entry.pattern.terms == pattern.terms
+                    else -> throw Error()
+                }
+            }
+                ?: return null
             return entry.value
         }
 

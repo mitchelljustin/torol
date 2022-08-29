@@ -5,8 +5,8 @@ class Parser(
     private val tokens: List<Token>,
 ) {
 
-    class ParseException(where: String, message: String, token: Token) :
-        CompilerException("[$where at ${token.pos}] $message: $token")
+    class ParseException(where: String, message: String, token: Token, derivation: StringBuilder) :
+        CompilerException("[$where at ${token.pos}] $message: $token\n$derivation")
 
     companion object {
         val AssignmentOperators = setOf(EQUAL, EQUAL_GREATER, LARROW, RARROW)
@@ -34,12 +34,14 @@ class Parser(
         }
     }
 
+    private var syntheticNewline: Boolean = false
     private var derivation = StringBuilder()
     private var stepNo = 0
     private var current = 0
     private val curToken get() = tokens[current]
     private val prevToken get() = tokens[current - 1]
     private val nextToken get() = tokens.getOrNull(current + 1)
+    private val curTokVerbose get() = "$curToken:$current"
 
     fun parse() = program()
 
@@ -49,12 +51,25 @@ class Parser(
         consumeWhitespace("before program")
         while (!present(EOF)) {
             consumeWhitespace("before statement in program")
-            exprs.add(assignment())
+            exprs.add(statement())
             consumeWhitespace("after statement in program")
         }
         val expr = Expr.Sequence(exprs, topLevel = true)
         returning("program", expr)
         return expr
+    }
+
+    private fun statement(): Expr {
+        val stmt = assignment()
+        if (present(EOF))
+            return stmt
+        if (syntheticNewline) {
+            report("consuming synthetic newline after statement")
+            syntheticNewline = false
+        } else {
+            consume(NEWLINE, where = "after statement")
+        }
+        return stmt
     }
 
     private fun assignment(): Expr {
@@ -82,13 +97,19 @@ class Parser(
             returning("lateEval", head)
             return head
         }
-        val headTerms = when (head) {
+        val terms = when (head) {
             is Expr.Phrase -> head.terms
             is Expr.Ident -> listOf(head)
-            else -> throw parseError("lateEval glue-up", "head expr must be a phrase or ident")
+            else -> throw error("lateEval glue-up", "head expr must be a phrase or ident")
+        }.toMutableList()
+        val tail = exprs.drop(1)
+        terms += tail.flatMap { expr ->
+            when (expr) {
+                is Expr.Sequence -> unpackSequence(expr)
+                else -> listOf(expr)
+            }
         }
-        val tailTerms = exprs.drop(1)
-        val gluedPhrase = Expr.Phrase(headTerms + tailTerms)
+        val gluedPhrase = Expr.Phrase(terms)
         returning("lateEval", gluedPhrase)
         return gluedPhrase
     }
@@ -130,37 +151,65 @@ class Parser(
 
     private fun phrase(): Expr {
         mark("phrase")
-        val terms = arrayListOf(unary())
-        if (terms.first() is Expr.Label) {
-            terms.add(binary())
-            return Expr.Phrase(terms)
-        }
+        val head = unary()
+        val terms = arrayListOf(head)
+        return when (head) {
+            is Expr.Label -> {
+                terms.add(
+                    when {
+                        startOfSequence() -> {
+                            report("label phrase sequence for '$head'")
+                            sequence()
+                        }
 
-        while (!present(RPAREN, DEDENT, INDENT, NEWLINE, EOF, BACKSLASH, *Operators.toTypedArray())) {
-            val term = unary()
-            mark("adding term to phrase: $term")
-            terms.add(term)
-        }
-        if (startOfSequence()) {
-            mark("adding to phrase: final sequence")
-            val finalSequence = sequence()
-            finalSequence.stmts.forEach { stmt ->
-                when {
-                    stmt is Expr.Phrase && stmt.target is Expr.Label -> {
-                        if (stmt.terms.size != 2) throw parseError(
-                            "phrase label statement",
-                            "must have exactly one arg"
-                        )
-                        terms.addAll(stmt.terms)
+                        else -> {
+                            report("label phrase single assignment for '$head'")
+                            assignment()
+                        }
                     }
+                )
+                val expr = Expr.Phrase(terms)
+                returning("label phrase", expr)
+                expr
+            }
 
-                    else -> terms.add(stmt)
+            is Expr.Ident -> {
+                while (!present(RPAREN, DEDENT, INDENT, NEWLINE, EOF, BACKSLASH, *Operators.toTypedArray())) {
+                    val term = unary()
+                    mark("adding term to phrase: $term")
+                    terms.add(term)
                 }
+                if (startOfSequence()) {
+                    mark("adding to phrase: final sequence")
+                    val finalSequence = sequence()
+                    terms += unpackSequence(finalSequence)
+                }
+                val expr = if (terms.size > 1) Expr.Phrase(terms) else head
+                returning("phrase", expr)
+                expr
+            }
+
+            else -> head
+        }
+
+    }
+
+    private fun unpackSequence(sequence: Expr.Sequence): List<Expr> {
+        report("unpacking sequence: '$sequence'")
+        val terms = sequence.stmts.flatMap { stmt ->
+            when {
+                stmt is Expr.Phrase && stmt.target is Expr.Label -> {
+                    if (stmt.terms.size != 2) throw error(
+                        "label phrase",
+                        "must have exactly one statement"
+                    )
+                    stmt.terms
+                }
+
+                else -> listOf(stmt)
             }
         }
-        val expr = if (terms.size > 1) Expr.Phrase(terms) else terms.first()
-        returning("phrase", expr)
-        return expr
+        return terms
     }
 
     private fun unary(): Expr {
@@ -179,8 +228,17 @@ class Parser(
             present(TILDE) -> unquote()
             present(LABEL) -> label()
             present(DOT_DOT) -> multi()
-            startOfSequence() -> sequence()
-            else -> throw parseError("primary", "illegal primary expression")
+            present(INDENT) -> throw error(
+                "primary",
+                "illegal INDENT in primary expression, probably a double indent"
+            )
+
+            startOfSequence() -> {
+                mark("sequence as primary")
+                sequence()
+            }
+
+            else -> throw error("primary", "illegal primary expression")
         }
         returning("primary", expr)
         return expr
@@ -198,7 +256,7 @@ class Parser(
         val body = when {
             present(LPAREN) -> grouping()
             present(IDENT) -> ident()
-            else -> throw parseError("unquote", "illegal unquote body")
+            else -> throw error("unquote", "illegal unquote body")
         }
         returning("unquote", body)
         return Expr.Unquote(body)
@@ -223,11 +281,14 @@ class Parser(
         consume(INDENT, where = "before sequence")
         val stmts = ArrayList<Expr>()
         while (!present(DEDENT)) {
-            mark("appending statement to sequence")
-            stmts.add(assignment())
-            consumeMaybe(NEWLINE, where = "after statement in sequence")
+            val stmt = statement()
+            mark("appending statement to sequence: '$stmt'")
+            stmts.add(stmt)
         }
         consume(DEDENT, where = "after sequence")
+        if (syntheticNewline)
+            throw error("sequence", "syntheticNewline = true")
+        syntheticNewline = true
         val expr = Expr.Sequence(stmts)
         returning("sequence", expr)
         return expr
@@ -286,7 +347,7 @@ class Parser(
 
             present(TILDE) -> Expr.Sexp.Unquote(unquote().body)
 
-            else -> throw parseError("sexp", "expected sexp")
+            else -> throw error("sexp", "expected sexp")
         }
         returning(where = "sexp", sexp)
         return sexp
@@ -300,11 +361,11 @@ class Parser(
     }
 
     private fun mark(where: String) {
-        report("in $where: $current:$curToken at ${curToken.pos}")
+        report("in $where: $curToken:$current at ${curToken.pos}")
     }
 
     private fun returning(where: String, what: Expr) {
-        report("in $where: returning $what")
+        report("in $where: returning '$what'")
     }
 
     private fun consumeMaybe(vararg types: Token.Type, where: String = ""): Boolean {
@@ -326,16 +387,17 @@ class Parser(
     private fun consume(vararg types: Token.Type, where: String = "") = consume(types.toSet(), where)
     private fun consume(types: Set<Token.Type>, where: String = ""): Token {
         if (types.isNotEmpty() && !present(types))
-            throw parseError(where, "expected ${types.joinToString("|")}, got $curToken")
-        report("consuming $current:$curToken $where")
+            throw error(where, "expected ${types.joinToString("|")}, got $curToken")
+        report("consuming $curTokVerbose $where")
         current++
         return prevToken
 
     }
 
+
     private fun present(vararg types: Token.Type) = present(types.toSet())
 
     private fun present(types: Set<Token.Type>) = curToken.type in types
 
-    private fun parseError(where: String, message: String) = ParseException(where, message, curToken)
+    private fun error(where: String, message: String) = ParseException(where, message, curToken, derivation)
 }
