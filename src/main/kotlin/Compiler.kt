@@ -130,9 +130,12 @@ class Compiler(
     }
 
     private fun genCall(expr: Expr.Phrase) {
-        if (expr.target !is Expr.Ident) {
-            error("genCall", "call target must be ident", expr.target)
-            return
+        when (expr.target) {
+            is Expr.Ident, is Expr.Path, is Expr.Access -> {}
+            else -> {
+                error("genCall", "call target must be ident, path or access", expr.target)
+                return
+            }
         }
         expr.args.forEach(::generate)
         val pattern = Pattern.Search(expr.terms)

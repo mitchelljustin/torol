@@ -1,7 +1,35 @@
-(a + b) =>
-  ~a
-  ~b
-  !i32.add
+__stack_pointer = 0x10000 # 64KiB of stack space
+
+sp_get => !global.get __stack_pointer
+
+sp_set => !global.set __stack_pointer
+
+sp_decr n =>
+  sp_get
+  !i32.const ~n
+  !i32.sub
+  sp_set
+
+
+binop op:op ld:load st:store sz:size lhs rhs =>
+  sp_decr ~size
+  sp_get
+  ~lhs
+  ~load
+  ~rhs
+  ~load
+  ~op
+  ~store
+
+(lhs + rhs) =>
+  binop
+    op:!i32.add
+    ld:!i32.load
+    st:!i32.store
+    sz:4
+    ~lhs
+    ~rhs
+
 
 (a * b) =>
   ~a

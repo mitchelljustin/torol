@@ -18,20 +18,26 @@ class Token(val type: Type, val lexeme: String, val pos: Pos, val value: Any? = 
         EQUAL("="), EQUAL_GREATER("=>"),
         RARROW("->"), LARROW("<-"),
 
-        // binary operators
+        // binary (/unary) operators
         PLUS("+"), MINUS("-"), SLASH("/"), STAR("*"),
         PLUS_EQUAL("+="), MINUS_EQUAL("-="), SLASH_EQUAL("/="), STAR_EQUAL("*="),
         EQUAL_EQUAL("=="), BANG_EQUAL("!="),
         GREATER(">"), GREATER_EQUAL(">="), LESS("<"), LESS_EQUAL("<="),
 
+        // unary operators
+        AMPERSAND("&"),
+
         // WASM operators
-        DOT("."), DOLLAR("$"),
+        DOLLAR("$"),
+
+        // access operators
+        DOT("."), COLON_COLON("::"),
 
         INDENT, DEDENT,
 
         LABEL,
 
-        IDENT, STRING, NUMBER,
+        IDENT, STRING, NUMBER, NOMEN,
 
         EOF
     }

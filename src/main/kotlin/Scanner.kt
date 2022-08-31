@@ -21,15 +21,17 @@ class Scanner(
     private val lexeme get() = source.slice(start until current)
 
     companion object {
-        val LETTERS = ('a'..'z').toSet() + ('A'..'Z').toSet() + setOf('_')
+        val LOWERCASE = ('a'..'z').toSet() + setOf('_')
+        val UPPERCASE = ('A'..'Z').toSet()
+        private val LETTERS = LOWERCASE + UPPERCASE
         val DIGITS = ('0'..'9').toSet()
         val ALPHANUMERICS = LETTERS + DIGITS
-        val SYMBOLS_DOUBLE = Token.Type.values()
+        val PUNCT_DOUBLE = Token.Type.values()
             .filter { it.match?.length == 2 }
             .groupBy { it.match!!.first() }
             .mapValues { (_, tokens) -> tokens.associateBy { it.match!![1] } }
 
-        val SYMBOLS_SINGLE = Token.Type.values()
+        val PUNCT_SINGLE = Token.Type.values()
             .filter { it.match?.length == 1 }
             .associateBy { it.match!!.first() }
 
@@ -58,25 +60,37 @@ class Scanner(
             '"' -> string()
             '\n' -> newline()
             ' ' -> {}
-            in SYMBOLS_DOUBLE -> doubleSymbol(char)
-            in SYMBOLS_SINGLE -> addToken(SYMBOLS_SINGLE[char]!!)
-            in LETTERS -> identifierOrLabel()
+            in PUNCT_DOUBLE -> doublePunct(char)
+            in PUNCT_SINGLE -> addToken(PUNCT_SINGLE[char]!!)
+            in LOWERCASE -> identOrLabel()
+            in UPPERCASE -> nomen()
             in DIGITS -> number()
             else -> throw scanError("scanToken()", "valid character")
         }
     }
 
+    private fun nomen() {
+        consumeAll(ALPHANUMERICS)
+        addToken(NOMEN)
+    }
 
-    private fun doubleSymbol(char: Char) {
-        val type = SYMBOLS_DOUBLE[char]!![curChar]
+
+    private fun doublePunct(firstChar: Char) {
+        val type = PUNCT_DOUBLE[firstChar]!![curChar]
         when {
             type != null -> {
                 increment()
                 addToken(type)
             }
 
-            char in SYMBOLS_SINGLE -> addToken(SYMBOLS_SINGLE[char]!!)
-            else -> throw scanError("doubleSymbol()", "a valid one or two character symbol")
+            firstChar in PUNCT_SINGLE -> addToken(PUNCT_SINGLE[firstChar]!!)
+            tokens.lastOrNull()?.type == LABEL && firstChar == ':' -> {
+                val label = tokens.removeLast()
+                tokens.add(Token(IDENT, label.value as String, curPos))
+                tokens.add(Token(COLON_COLON, COLON_COLON.match!!, curPos))
+            }
+
+            else -> throw scanError("doublePunct()", "a valid one or two character punctuation")
         }
     }
 
@@ -92,9 +106,10 @@ class Scanner(
 
     private fun setIndentLevel(indentLevel: Int) {
         val diff = indentLevel - currentIndent
+        fun addWhitespace(type: Token.Type) = tokens.add(Token(type, "", curPos))
         when {
-            diff < 0 -> repeat(-diff) { addToken(DEDENT) }
-            diff > 0 -> repeat(diff) { addToken(INDENT) }
+            diff < 0 -> repeat(-diff) { addWhitespace(DEDENT) }
+            diff > 0 -> repeat(diff) { addWhitespace(INDENT) }
             else -> {}
         }
         currentIndent = indentLevel
@@ -124,12 +139,15 @@ class Scanner(
         addToken(NUMBER, value)
     }
 
-    private fun identifierOrLabel() {
+    private fun identOrLabel() {
         consumeAll(ALPHANUMERICS)
-        if (checkAndConsume(':'))
-            addToken(LABEL, lexeme.dropLast(1))
-        else
-            addToken(IDENT)
+        when {
+            checkAndConsume(':') ->
+                addToken(LABEL, value = lexeme.dropLast(1))
+
+            else ->
+                addToken(IDENT)
+        }
     }
 
     private fun consumeAll(chars: Set<Char>) {

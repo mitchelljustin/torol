@@ -152,7 +152,7 @@ class Expander {
                     is Expr.Assignment -> body.terms
                     else -> throw MacroException(
                         "defineOperatorMacro",
-                        "operator macro must be (lhs <operator> [rhs])",
+                        "operator macro must be ([lhs] <operator> rhs)",
                         target
                     )
                 }
@@ -197,7 +197,7 @@ class Expander {
                 is Expr.Ident -> arrayListOf(exprToSexp(expr.body))
                 else -> throw MacroException("exprToSexp", "illegal grouping body for sexp", expr.body)
             }
-            Sexp.List(terms)
+            Sexp.List(terms, parens = true)
         }
 
         is Expr.Ident -> Sexp.Ident(expr.name)

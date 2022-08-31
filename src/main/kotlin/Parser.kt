@@ -6,18 +6,21 @@ class Parser(
 ) {
 
     class ParseException(where: String, message: String, token: Token, derivation: StringBuilder) :
-        CompilerException("[$where at ${token.pos}] $message: $token\n$derivation")
+        CompilerException("$derivation\n[$where at ${token.pos}] $message: $token")
 
     companion object {
         val AssignmentOperators = setOf(EQUAL, EQUAL_GREATER, LARROW, RARROW)
         val BinaryOperators = setOf(
-            PLUS, MINUS, STAR, SLASH,
+            PLUS, SLASH, MINUS, STAR,
             EQUAL_EQUAL, BANG_EQUAL,
             GREATER, GREATER_EQUAL, LESS, LESS_EQUAL,
             PLUS_EQUAL, MINUS_EQUAL, SLASH_EQUAL, STAR_EQUAL,
         )
-        val Operators = AssignmentOperators + BinaryOperators
+        val PhraseTerminators = setOf(
+            RPAREN, DEDENT, INDENT, NEWLINE, EOF, BACKSLASH,
+        ) + BinaryOperators + AssignmentOperators
         val Literals = setOf(STRING, NUMBER)
+        val LineTerminators = setOf(NEWLINE, INDENT, DEDENT)
 
         fun parse(source: String, verbose: Boolean = false): Expr {
             if (verbose) println("----------\n$source\n----------")
@@ -48,11 +51,11 @@ class Parser(
     private fun program(): Expr.Sequence {
         mark("program")
         val exprs = ArrayList<Expr>()
-        consumeWhitespace("before program")
+        consumeLineTerminators("before program")
         while (!present(EOF)) {
-            consumeWhitespace("before statement in program")
+            consumeLineTerminators("before statement in program")
             exprs.add(statement())
-            consumeWhitespace("after statement in program")
+            consumeLineTerminators("after statement in program")
         }
         val expr = Expr.Sequence(exprs, topLevel = true)
         returning("program", expr)
@@ -89,9 +92,9 @@ class Parser(
 
     private fun lateEval(): Expr {
         mark("lateEval")
-        val exprs = arrayListOf(binary())
+        val exprs = arrayListOf(unaryMinus())
         while (consumeMaybe(BACKSLASH, where = "after late eval expr"))
-            exprs.add(binary())
+            exprs.add(unaryMinus())
         val head = exprs.first()
         if (exprs.size == 1) {
             returning("lateEval", head)
@@ -114,6 +117,13 @@ class Parser(
         return gluedPhrase
     }
 
+    private fun unaryMinus(): Expr {
+        if (consumeMaybe(MINUS, where = "in unaryMinus")) {
+            return Expr.Unary(Expr.Operator(prevToken), unaryMinus())
+        }
+        return binary()
+    }
+
     private fun binary(): Expr {
         mark("binary")
         var expr = assembly()
@@ -134,7 +144,7 @@ class Parser(
         val expr = when {
             consumeMaybe(BANG, where = "before assembly") -> {
                 val sexps = arrayListOf(sexp())
-                while (!present(NEWLINE, DEDENT, INDENT))
+                while (!present(LineTerminators))
                     sexps.add(sexp())
                 val body = when (sexps.size) {
                     1 -> sexps.first()
@@ -151,7 +161,7 @@ class Parser(
 
     private fun phrase(): Expr {
         mark("phrase")
-        val head = unary()
+        val head = primary()
         val terms = arrayListOf(head)
         return when (head) {
             is Expr.Label -> {
@@ -173,10 +183,10 @@ class Parser(
                 expr
             }
 
-            is Expr.Ident -> {
-                while (!present(RPAREN, DEDENT, INDENT, NEWLINE, EOF, BACKSLASH, *Operators.toTypedArray())) {
-                    val term = unary()
-                    mark("adding term to phrase: $term")
+            is Expr.Ident, is Expr.Path, is Expr.Access -> {
+                while (!present(PhraseTerminators)) {
+                    val term = primary()
+                    mark("adding term to phrase: '$term'")
                     terms.add(term)
                 }
                 if (startOfSequence()) {
@@ -212,18 +222,14 @@ class Parser(
         return terms
     }
 
-    private fun unary(): Expr {
-        if (consumeMaybe(MINUS, where = "unary")) {
-            return Expr.Unary(Expr.Operator(prevToken), unary())
-        }
-        return primary()
-    }
 
     private fun primary(): Expr {
         mark("primary")
         val expr = when {
-            present(IDENT) -> ident()
+            present(IDENT) || present(DOT) -> access()
+            present(NOMEN) || present(COLON_COLON) -> path()
             present(Literals) -> literal()
+            present(AMPERSAND) -> reference()
             present(LPAREN) -> grouping()
             present(TILDE) -> unquote()
             present(LABEL) -> label()
@@ -241,6 +247,45 @@ class Parser(
             else -> throw error("primary", "illegal primary expression")
         }
         returning("primary", expr)
+        return expr
+    }
+
+    private fun reference(): Expr {
+        mark("reference")
+        consume(AMPERSAND, where = "in reference")
+        val expr = Expr.Unary(Expr.Operator(prevToken), primary())
+        returning("reference", expr)
+        return expr
+    }
+
+    private fun path(): Expr {
+        val path = segmented(::pathSegment, Expr::Path, COLON_COLON)
+        if (path is Expr.Nomen)
+            return path
+        if (path !is Expr.Path)
+            throw error("nomenOrPath", "huh??")
+        val illegalSegments = path.segments.dropLast(1).filterIsInstance<Expr.Ident>()
+        if (illegalSegments.isNotEmpty())
+            throw error(
+                "nomenOrPath",
+                "illegal ident path segments, only last may be ident: ${illegalSegments.joinToString(", ")}"
+            )
+        return path
+    }
+
+    private fun access() = segmented(::ident, Expr::Access, DOT)
+
+    private fun segmented(segment: () -> Expr, combinator: (List<Expr>, Boolean) -> Expr, separator: Token.Type): Expr {
+        mark("segmented")
+        val prefixed = consumeMaybe(separator, where = "segmented (prefixed separator)")
+        val segments = arrayListOf(segment())
+        while (consumeMaybe(separator, where = "segmented $segment"))
+            segments.add(segment())
+        val expr = when {
+            segments.size > 1 || prefixed -> combinator(segments, prefixed)
+            else -> segments.first()
+        }
+        returning("segmented", expr)
         return expr
     }
 
@@ -262,7 +307,8 @@ class Parser(
         return Expr.Unquote(body)
     }
 
-    private fun startOfSequence() = present(NEWLINE) && nextToken?.type == INDENT
+    private fun twoPresent(first: Token.Type, second: Token.Type) = curToken.type == first && nextToken?.type == second
+    private fun startOfSequence() = twoPresent(NEWLINE, INDENT)
 
     private fun grouping(): Expr {
         mark("grouping")
@@ -279,13 +325,20 @@ class Parser(
         mark("sequence")
         consume(NEWLINE, where = "before sequence")
         consume(INDENT, where = "before sequence")
+        var level = 1
+        while (present(INDENT)) {
+            level += 1
+            consume(INDENT, where = "level $level before sequence (extra)")
+        }
         val stmts = ArrayList<Expr>()
         while (!present(DEDENT)) {
             val stmt = statement()
             mark("appending statement to sequence: '$stmt'")
             stmts.add(stmt)
         }
-        consume(DEDENT, where = "after sequence")
+        repeat(level) { i ->
+            consume(DEDENT, where = "level $i after sequence")
+        }
         if (syntheticNewline)
             throw error("sequence", "syntheticNewline = true")
         syntheticNewline = true
@@ -295,22 +348,25 @@ class Parser(
     }
 
     private fun label() =
-        Expr.Label(consume(LABEL, where = "label()").value as String)
+        Expr.Label(consume(LABEL, where = "in label").value as String)
 
     private fun literal() =
-        Expr.Literal(consume(Literals, where = "literal()").value!!)
+        Expr.Literal(consume(Literals, where = "in literal").value!!)
 
     private fun ident(): Expr.Ident {
-        val name = buildString {
-            append(consume(IDENT, where = "ident").lexeme)
-            if (consumeMaybe(DOT, where = "ident dot")) {
-                append(".")
-                append(consume(IDENT, where = "ident post-dot").lexeme)
-            }
-        }
-        return Expr.Ident(name)
+        return Expr.Ident(consume(IDENT, where = "in ident").lexeme)
     }
 
+    private fun pathSegment(): Expr {
+        mark("pathSegment")
+        val segment = when {
+            present(IDENT) -> Expr.Ident(consume(IDENT, where = "pathComponent").lexeme)
+            present(NOMEN) -> Expr.Nomen(consume(NOMEN, where = "pathComponent").lexeme)
+            else -> throw error(where = "pathComponent", "path component may either be an ident or a nomen")
+        }
+        returning("pathSegment", segment)
+        return segment
+    }
 
     private var groupingNo = 0
     private fun sexp(): Expr.Sexp {
@@ -321,12 +377,12 @@ class Parser(
                 groupingNo += 1
                 val terms = ArrayList<Expr.Sexp>()
                 while (!present(RPAREN)) {
-                    consumeWhitespace("sexp grouping")
+                    consumeLineTerminators("sexp grouping")
                     terms.add(sexp())
-                    consumeWhitespace("sexp grouping")
+                    consumeLineTerminators("sexp grouping")
                 }
                 consume(RPAREN, where = "sexp grouping (end $thisGrouping)")
-                Expr.Sexp.List(terms)
+                Expr.Sexp.List(terms, parens = true)
             }
 
             consumeMaybe(DOLLAR, where = "sexp $") -> {
@@ -368,20 +424,19 @@ class Parser(
         report("in $where: returning '$what'")
     }
 
-    private fun consumeMaybe(vararg types: Token.Type, where: String = ""): Boolean {
-        if (present(*types)) {
-            consume(*types, where = where)
+    private fun consumeMaybe(vararg types: Token.Type, where: String = "") = consumeMaybe(types.toSet(), where)
+    private fun consumeMaybe(types: Set<Token.Type>, where: String = ""): Boolean {
+        if (present(types)) {
+            consume(types, where = where)
             return true
         }
         return false
     }
 
-
-    private fun consumeWhitespace(where: String) {
-        val types = arrayOf(NEWLINE, DEDENT, INDENT)
-        report("consuming any ${types.joinToString("|")} $where")
-        while (present(*types))
-            consume(*types, where = where)
+    private fun consumeLineTerminators(where: String) {
+        report("consuming any line terminators $where")
+        while (present(LineTerminators))
+            consume(LineTerminators, where = where)
     }
 
     private fun consume(vararg types: Token.Type, where: String = "") = consume(types.toSet(), where)
