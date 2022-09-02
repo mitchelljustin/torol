@@ -1,10 +1,10 @@
 import Assembly.literal
 
-open class Expr {
+open class AST {
     companion object {
-        fun transform(expr: Expr, func: (Expr) -> Expr?): Expr {
-            fun transform(expr: Expr) = transform(expr, func)
-            fun visit(expr: Expr) = func(expr) ?: expr
+        fun map(expr: AST, transform: (AST) -> AST?): AST {
+            fun recurse(expr: AST) = map(expr, transform)
+            fun visit(expr: AST) = transform(expr) ?: expr
             return when (expr) {
                 is Nil,
                 is Ident,
@@ -16,67 +16,68 @@ open class Expr {
                 is Sexp.Literal
                 -> visit(expr)
 
-                is Sequence -> visit(Sequence(expr.stmts.map(::transform)))
+                is Sequence -> visit(Sequence(expr.stmts.map(::recurse)))
                 is Binary -> visit(
                     Binary(
-                        transform(expr.lhs),
+                        recurse(expr.lhs),
                         expr.operator,
-                        transform(expr.rhs)
+                        recurse(expr.rhs)
                     )
                 )
 
                 is Unary -> visit(
                     Unary(
                         expr.operator,
-                        transform(expr.body),
+                        recurse(expr.body),
                     )
                 )
 
                 is Assignment -> visit(
                     Assignment(
-                        transform(expr.target),
+                        recurse(expr.target),
                         expr.operator,
-                        transform(expr.value)
+                        recurse(expr.value)
                     )
                 )
 
-                is Multi -> visit(Multi(transform(expr.body)))
-                is Assembly -> visit(Assembly(transform(expr.body) as Sexp))
-                is Phrase -> visit(Phrase(expr.terms.map(::transform)))
-                is Grouping -> visit(Grouping(transform(expr.body)))
-                is Path -> visit(Path(expr.segments.map(::transform), prefixed = expr.prefixed))
-                is Access -> visit(Access(expr.segments.map(::transform), prefixed = expr.prefixed))
-                is Unquote -> visit(Unquote(transform(expr.body)))
-                is Sexp.List -> visit(Sexp.List(expr.terms.map { transform(it) as Sexp }, parens = expr.parens))
-                else -> throw Exception("unsupported expr for transform(): $expr")
+                is Splat -> visit(Splat(recurse(expr.body)))
+                is Assembly -> visit(Assembly(recurse(expr.body) as Sexp))
+                is Phrase -> visit(Phrase(expr.terms.map(::recurse)))
+                is Grouping -> visit(Grouping(recurse(expr.body)))
+                is Path -> visit(Path(expr.segments.map(::recurse), prefixed = expr.prefixed))
+                is Access -> visit(Access(expr.segments.map(::recurse), prefixed = expr.prefixed))
+                is Unquote -> visit(Unquote(recurse(expr.body)))
+                is Sexp.List -> visit(Sexp.List(expr.terms.map { recurse(it) as Sexp }, parens = expr.parens))
+                is Sexp.Access -> visit(Sexp.Access(expr.segments.map { recurse(it) as Sexp.Ident }))
+                else -> throw Exception("unsupported expr for transform(): '$expr'")
             }
         }
     }
 
     open val returns = true
 
-    class Nil : Expr() {
+    class Nil : AST() {
         override val returns = false
         override fun toString() = "()"
     }
 
-    data class Multi(val body: Expr) : Expr() {
-        override fun toString() = "..$body"
+    data class Splat(val body: AST) : AST() {
+        override fun toString() = "$body.."
     }
 
-    data class Ident(val name: String) : Expr() {
+    data class Ident(val name: String) : AST() {
         override fun toString() = name
     }
 
-    data class Nomen(val name: String) : Expr() {
+    data class Nomen(val name: String) : AST() {
         override fun toString() = name
     }
 
-    data class Label(val name: String) : Expr() {
+    data class Label(val name: String) : AST() {
         override fun toString() = "$name:"
     }
 
-    data class Literal(val literal: Any) : Expr() {
+    data class Literal(val literal: Any) : AST() {
         override fun toString() = when (literal) {
             is String -> literal.literal()
             else -> literal.toString()
@@ -84,7 +85,7 @@ open class Expr {
     }
 
 
-    data class Sequence(val stmts: List<Expr>, val topLevel: Boolean = false) : Expr() {
+    data class Sequence(val stmts: List<AST>, val topLevel: Boolean = false) : AST() {
         override val returns = (stmts.lastOrNull()?.returns ?: false) && !topLevel
         override fun toString(): String = buildString {
             append("[ ")
@@ -93,44 +94,44 @@ open class Expr {
         }
     }
 
-    data class Operator(val operator: Token) : Expr() {
+    data class Operator(val operator: Token) : AST() {
         override fun toString() = operator.lexeme
     }
 
-    data class Assignment(val target: Expr, val operator: Operator, val value: Expr) : Expr() {
+    data class Assignment(val target: AST, val operator: Operator, val value: AST) : AST() {
         override val returns = false
         val terms get() = listOf(operator, target, value)
         override fun toString() = "$target $operator $value"
     }
 
-    data class Binary(val lhs: Expr, val operator: Operator, val rhs: Expr) : Expr() {
+    data class Binary(val lhs: AST, val operator: Operator, val rhs: AST) : AST() {
         val terms get() = listOf(operator, lhs, rhs)
         override fun toString() = "‹$lhs $operator $rhs›"
 
     }
 
-    data class Unary(val operator: Operator, val body: Expr) : Expr() {
+    data class Unary(val operator: Operator, val body: AST) : AST() {
         val terms get() = listOf(operator, body)
 
         override fun toString() = "$operator$body"
     }
 
-    data class Assembly(val body: Sexp) : Expr() {
+    data class Assembly(val body: Sexp) : AST() {
         override fun toString() = "!$body"
     }
 
-    data class Phrase(val terms: List<Expr>) : Expr() {
+    data class Phrase(val terms: List<AST>) : AST() {
         val target = terms.first()
         val args = terms.drop(1)
 
         override fun toString(): String = "‹${terms.joinToString(" ")}›"
     }
 
-    data class Grouping(val body: Expr) : Expr() {
+    data class Grouping(val body: AST) : AST() {
         override fun toString() = "($body)"
     }
 
-    data class Access(val segments: List<Expr>, val prefixed: Boolean) : Expr() {
+    data class Access(val segments: List<AST>, val prefixed: Boolean) : AST() {
         override fun toString(): String {
             val inner = segments.joinToString(".")
             return when (prefixed) {
@@ -140,7 +141,7 @@ open class Expr {
         }
     }
 
-    data class Path(val segments: List<Expr>, val prefixed: Boolean) : Expr() {
+    data class Path(val segments: List<AST>, val prefixed: Boolean) : AST() {
         override fun toString(): String {
             val inner = segments.joinToString("::")
             return when (prefixed) {
@@ -150,11 +151,11 @@ open class Expr {
         }
     }
 
-    data class Unquote(val body: Expr) : Expr() {
+    data class Unquote(val body: AST) : AST() {
         override fun toString() = "~$body"
     }
 
-    abstract class Sexp : Expr() {
+    abstract class Sexp : AST() {
         abstract fun render(): String
 
         open class Builder {
@@ -215,10 +216,15 @@ open class Expr {
 
         }
 
-        data class Unquote(val body: Expr) : Sexp() {
+        data class Access(val segments: kotlin.collections.List<Ident>) : Sexp() {
+            override fun render() = segments.joinToString(".")
+
+            override fun toString() = render()
+        }
+
+        data class Unquote(val body: AST) : Sexp() {
             override fun render() = "~$body"
             override fun toString() = render()
-
         }
 
         class Linebreak : Sexp() {

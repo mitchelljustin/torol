@@ -1,6 +1,6 @@
+import AST.Sexp
 import Assembly.id
 import Assembly.literal
-import Expr.Sexp
 import Token.Type.EQUAL
 import Token.Type.EQUAL_GREATER
 import java.io.File
@@ -92,35 +92,35 @@ class Compiler(
     }
 
 
-    private fun generate(expr: Expr) {
+    private fun generate(expr: AST) {
         when (expr) {
-            is Expr.Assembly -> genAssembly(expr)
-            is Expr.Sequence -> genSequence(expr)
-            is Expr.Assignment -> genAssignment(expr)
-            is Expr.Binary -> errOnlyInMacros("binary expressions", expr)
-            is Expr.Multi -> errOnlyInMacros("splat operators", expr)
-            is Expr.Literal -> genLiteral(expr)
-            is Expr.Phrase -> genCall(expr)
-            is Expr.Ident -> genVarRef(expr)
-            is Expr.Grouping -> genGrouping(expr)
-            is Expr.Label -> error("generate", "illegal label outside of phrase", expr)
-            is Expr.Nil -> genNil()
+            is AST.Assembly -> genAssembly(expr)
+            is AST.Sequence -> genSequence(expr)
+            is AST.Assignment -> genAssignment(expr)
+            is AST.Binary -> errOnlyInMacros("binary expressions", expr)
+            is AST.Splat -> errOnlyInMacros("splat operators", expr)
+            is AST.Literal -> genLiteral(expr)
+            is AST.Phrase -> genCall(expr)
+            is AST.Ident -> genVarRef(expr)
+            is AST.Grouping -> genGrouping(expr)
+            is AST.Label -> error("generate", "illegal label outside of phrase", expr)
+            is AST.Nil -> genNil()
             else -> error("generate", "illegal expr type", expr)
         }
     }
 
-    private fun errOnlyInMacros(what: String, expr: Expr) {
+    private fun errOnlyInMacros(what: String, expr: AST) {
         error("generate", "$what may only appear in macros", expr)
     }
 
     private fun genNil() {
     }
 
-    private fun genGrouping(expr: Expr.Grouping) {
+    private fun genGrouping(expr: AST.Grouping) {
         generate(expr.body)
     }
 
-    private fun genVarRef(expr: Expr.Ident) {
+    private fun genVarRef(expr: AST.Ident) {
         val referent = context.resolve(Pattern.Search(expr.name)) as? Referent.Variable
         if (referent == null) {
             error("genVarRef", "undefined variable", expr)
@@ -129,9 +129,9 @@ class Compiler(
         function.add("${referent.scope.asmPrefix}.get", expr.name.id())
     }
 
-    private fun genCall(expr: Expr.Phrase) {
+    private fun genCall(expr: AST.Phrase) {
         when (expr.target) {
-            is Expr.Ident, is Expr.Path, is Expr.Access -> {}
+            is AST.Ident, is AST.Path, is AST.Access -> {}
             else -> {
                 error("genCall", "call target must be ident, path or access", expr.target)
                 return
@@ -147,7 +147,7 @@ class Compiler(
         function.add("call", name)
     }
 
-    private fun genLiteral(expr: Expr.Literal) {
+    private fun genLiteral(expr: AST.Literal) {
         when (val value = expr.literal) {
             is Int -> genI32Const(value)
             is String -> genStringLiteral(value)
@@ -175,17 +175,17 @@ class Compiler(
         function.add("i32.const", value)
     }
 
-    private fun genAssignment(expr: Expr.Assignment) {
+    private fun genAssignment(expr: AST.Assignment) {
         when (expr.operator.operator.type) {
             EQUAL_GREATER -> {}
-            EQUAL -> when (expr.target) {
-                is Expr.Nil -> {
+            EQUAL -> when (val target = expr.target) {
+                is AST.Nil -> {
                     generate(expr.value)
                     function.add("drop")
                 }
 
-                is Expr.Ident -> genVariableDef(expr.target, expr.value)
-                is Expr.Phrase -> genFunctionDef(expr.target, expr.value)
+                is AST.Ident -> genVariableDef(target, expr.value)
+                is AST.Phrase -> genFunctionDef(target, expr.value)
                 else -> error("genAssignment", "illegal target for assignment", expr.target)
             }
 
@@ -193,8 +193,7 @@ class Compiler(
         }
     }
 
-
-    private fun genVariableDef(target: Expr.Ident, value: Expr) {
+    private fun genVariableDef(target: AST.Ident, value: AST) {
         generate(value)
         val id = target.name.id()
         val pattern = Pattern.Definition(target.name)
@@ -220,8 +219,9 @@ class Compiler(
     }
 
 
-    private fun genFunctionDef(target: Expr.Phrase, body: Expr) {
+    private fun genFunctionDef(target: AST.Phrase, body: AST) {
         val pattern = Pattern.Definition(target.terms)
+        if (pattern.hasVararg) return error("genFunctionDef", "varargs are only supported in macros", pattern)
         val params = pattern.terms.filterIsInstance<Pattern.Term.Any>().filter { it.binding != null }
         val paramDefs = params.map { param ->
             val name = param.binding!!.id()
@@ -248,13 +248,13 @@ class Compiler(
         context.define(pattern, Referent.Function(pattern))
     }
 
-    private fun genSequence(expr: Expr.Sequence) {
+    private fun genSequence(expr: AST.Sequence) {
         expr.stmts.forEachIndexed { i, stmt ->
             generate(stmt)
         }
     }
 
-    private fun genAssembly(expr: Expr.Assembly) {
+    private fun genAssembly(expr: AST.Assembly) {
         val section = when (expr.body) {
             is Sexp.List -> when (expr.body.terms.first()) {
                 Sexp.Ident("import") -> meta

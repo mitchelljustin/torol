@@ -1,27 +1,27 @@
+import AST.Sexp
 import Assembly.id
 import Assembly.literal
-import Expr.Sexp
 import Token.Type.EQUAL
 import Token.Type.EQUAL_GREATER
 import java.io.File
 
 
 class Expander {
-    class MacroException(where: String, message: String, expr: Expr?) :
+    class MacroException(where: String, message: String, expr: AST?) :
         CompilerException("[$where] $message: $expr")
 
-    data class Macro(val pattern: Pattern.Definition, val substitution: Expr)
+    data class Macro(val pattern: Pattern.Definition, val substitution: AST)
 
     private val context = Context<Macro>()
     val imports = ArrayList<Pattern.Definition>()
 
 
-    fun expand(input: Expr): Expr = Expr.transform(input) { expr ->
+    fun expand(input: AST): AST = AST.map(input) { expr ->
         when (expr) {
-            is Expr.Assignment -> when (expr.operator.operator.type) {
+            is AST.Assignment -> when (expr.operator.operator.type) {
                 EQUAL_GREATER -> {
                     defineMacro(expr.target, expr.value)
-                    Expr.Nil()
+                    AST.Nil()
                 }
 
                 EQUAL -> null
@@ -29,11 +29,11 @@ class Expander {
                 else -> expandMacroCall(expr.terms)
             }
 
-            is Expr.Binary -> expandMacroCall(expr.terms)
-            is Expr.Unary -> expandMacroCall(expr.terms)
+            is AST.Binary -> expandMacroCall(expr.terms)
+            is AST.Unary -> expandMacroCall(expr.terms)
 
-            is Expr.Phrase -> {
-                if (expr.target !is Expr.Ident) return@transform null
+            is AST.Phrase -> {
+                if (expr.target !is AST.Ident) return@map null
                 when (expr.target.name) {
                     "include" -> expandInclude(expr)
                     "import" -> expandImport(expr)
@@ -41,7 +41,7 @@ class Expander {
                 }
             }
 
-            is Expr.Ident -> {
+            is AST.Ident -> {
                 val pattern = Pattern.Search(expr.name)
                 findMacro(pattern)?.substitution
             }
@@ -50,7 +50,7 @@ class Expander {
         }
     }
 
-    private fun expandMacroCall(terms: List<Expr>): Expr? {
+    private fun expandMacroCall(terms: List<AST>): AST? {
         val searchPat = Pattern.Search(terms)
         val macro = findMacro(searchPat) ?: return null
         val (pattern, substitution) = macro
@@ -62,28 +62,28 @@ class Expander {
         }
     }
 
-    private fun expandImport(expr: Expr.Phrase): Expr {
+    private fun expandImport(expr: AST.Phrase): AST {
         val module = try {
             val (label, module) = expr.args
-            if (label != Expr.Label("from"))
+            if (label != AST.Label("from"))
                 throw MacroException("expandImport", "expected import from: module (func1) (func2) ..", label)
-            if (module !is Expr.Literal || module.literal !is String)
+            if (module !is AST.Literal || module.literal !is String)
                 throw MacroException("expandImport", "module must be an string literal", module)
             module.literal
         } catch (_: ArrayIndexOutOfBoundsException) {
             throw MacroException("expandImport", "wrong number of arguments", expr)
         }
 
-        fun importFunc(expr: Expr): Array<Any?> = when (expr) {
-            is Expr.Grouping -> importFunc(expr.body)
-            is Expr.Phrase -> {
-                if (expr.terms.any { it !is Expr.Ident })
+        fun importFunc(expr: AST): Array<Any?> = when (expr) {
+            is AST.Grouping -> importFunc(expr.body)
+            is AST.Phrase -> {
+                if (expr.terms.any { it !is AST.Ident })
                     throw MacroException(
                         "expandImport",
                         "illegal function import, all terms must be ident",
                         expr.target
                     )
-                val terms = expr.terms.map { (it as Expr.Ident).name }
+                val terms = expr.terms.map { (it as AST.Ident).name }
                 val name = terms.first()
                 val pattern = Pattern.Definition(expr.terms)
                 imports.add(pattern)
@@ -110,8 +110,8 @@ class Expander {
         //   fd_write fd iovec iovec_len num_written
 
         val items = expr.args.drop(2)
-        return Expr.Sequence(items.map { item ->
-            Expr.Assembly(
+        return AST.Sequence(items.map { item ->
+            AST.Assembly(
                 Sexp.from(
                     "import",
                     module.literal(),
@@ -122,11 +122,11 @@ class Expander {
     }
 
 
-    private fun expandInclude(expr: Expr.Phrase): Expr {
+    private fun expandInclude(expr: AST.Phrase): AST {
         if (expr.args.size != 1)
             throw MacroException("expandInclude", "wrong number of arguments", expr)
         val arg = expr.args.first()
-        if (arg !is Expr.Literal || arg.literal !is String)
+        if (arg !is AST.Literal || arg.literal !is String)
             throw MacroException("expandInclude", "include arg must be a string", expr)
         val module = arg.literal.removeSuffix(".catac")
         val source = File("$module.catac").readText()
@@ -136,20 +136,20 @@ class Expander {
 
     private fun findMacro(pattern: Pattern.Search) = context.resolve(pattern)
 
-    private fun defineMacro(target: Expr, value: Expr) {
+    private fun defineMacro(target: AST, value: AST) {
         val pattern = when (target) {
-            is Expr.Ident -> Pattern.Definition(target.name)
-            is Expr.Phrase -> {
-                if (target.target !is Expr.Ident)
+            is AST.Ident -> Pattern.Definition(target.name)
+            is AST.Phrase -> {
+                if (target.target !is AST.Ident)
                     throw MacroException("defineMacro", "target must start with Ident", target.target)
                 Pattern.Definition(target.terms)
             }
 
-            is Expr.Grouping -> {
+            is AST.Grouping -> {
                 val terms = when (val body = target.body) {
-                    is Expr.Binary -> body.terms
-                    is Expr.Unary -> body.terms
-                    is Expr.Assignment -> body.terms
+                    is AST.Binary -> body.terms
+                    is AST.Unary -> body.terms
+                    is AST.Assignment -> body.terms
                     else -> throw MacroException(
                         "defineOperatorMacro",
                         "operator macro must be ([lhs] <operator> rhs)",
@@ -167,14 +167,14 @@ class Expander {
         addMacro(pattern, value)
     }
 
-    private fun addMacro(pattern: Pattern.Definition, value: Expr) {
+    private fun addMacro(pattern: Pattern.Definition, value: AST) {
         context.define(pattern, Macro(pattern, value))
     }
 
-    private fun substitute(input: Expr): Expr = Expr.transform(input) { expr ->
+    private fun substitute(input: AST): AST = AST.map(input) { expr ->
         when (expr) {
-            is Expr.Unquote -> {
-                if (expr.body !is Expr.Ident)
+            is AST.Unquote -> {
+                if (expr.body !is AST.Ident)
                     throw MacroException("subUnquotes", "unquote body must be an Ident", expr.body)
                 val name = expr.body.name
                 context.resolve(Pattern.Search(name))?.substitution ?: throw MacroException(
@@ -190,18 +190,18 @@ class Expander {
         }
     }
 
-    private fun exprToSexp(expr: Expr): Sexp = when (expr) {
-        is Expr.Grouping -> {
+    private fun exprToSexp(expr: AST): Sexp = when (expr) {
+        is AST.Grouping -> {
             val terms = when (expr.body) {
-                is Expr.Phrase -> expr.body.terms.map(::exprToSexp)
-                is Expr.Ident -> arrayListOf(exprToSexp(expr.body))
+                is AST.Phrase -> expr.body.terms.map(::exprToSexp)
+                is AST.Ident -> arrayListOf(exprToSexp(expr.body))
                 else -> throw MacroException("exprToSexp", "illegal grouping body for sexp", expr.body)
             }
             Sexp.List(terms, parens = true)
         }
 
-        is Expr.Ident -> Sexp.Ident(expr.name)
-        is Expr.Literal -> {
+        is AST.Ident -> Sexp.Ident(expr.name)
+        is AST.Literal -> {
             when (expr.literal) {
                 is String,
                 is Number -> Sexp.Literal(expr.literal)
@@ -215,9 +215,9 @@ class Expander {
         else -> throw MacroException("exprToSexp", "illegal expr for sexp", expr)
     }
 
-    private fun subSexp(expr: Expr): Sexp = when (expr) {
-        is Expr.Phrase, is Expr.Ident -> exprToSexp(expand(expr))
-        is Expr.Assembly -> subSexp(expr.body)
+    private fun subSexp(expr: AST): Sexp = when (expr) {
+        is AST.Phrase, is AST.Ident -> exprToSexp(expand(expr))
+        is AST.Assembly -> subSexp(expr.body)
         else -> exprToSexp(expr)
     }
 

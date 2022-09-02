@@ -1,3 +1,106 @@
+LoadStore
+  load: op_load
+  store: op_store
+=>
+  ::load addr =>
+    ~addr
+    ~op_load
+
+  ::store addr value =>
+    ~addr
+    ~value
+    ~op_store
+    ()
+
+  store addr =>
+
+
+Int =
+  I32
+
+  include LoadStore
+    ::op_load => !i32.load
+    ::op_store => !i32.store
+
+  (self + rhs Int) = Int
+    self
+    rhs
+    !i32.add
+
+
+
+Ptr t =>
+  Int
+
+  write
+    data Ptr t
+    len Int
+  =
+    Mem::copy from:data to:self len:(len * Mem::size_of t)
+
+null => 0
+
+(a Int + b Int) = Int
+  ~a
+  ~b
+  !i32.add
+
+Uint8 =
+  I32
+
+  include LoadStore
+    ::op_load => !i32.load8_u
+    ::op_store => !i32.store8
+
+
+Mem =
+  ::copy
+    from: src Ptr
+    to: dest Ptr
+    len: len Int
+  =
+    for i in: 0 to: len
+      addr = dest + i
+      value = Uint8::load (src + i)
+      Uint8::store addr value
+
+  ::alloc size Int = Ptr
+    null # TODO
+
+  ::size_of t =>
+    match
+      I32 -> 4
+
+
+
+
+
+Uint8Vec =
+  .len Int
+  .ptr Ptr
+
+  slice start Int = slice start to: (len - 1)
+  slice start Int to: end Int =
+    newLen = end - start + 1
+    newPtr = Mem::alloc newLen
+    (ptr + start).write newPtr newLen
+    Uint8Vec newLen newPtr
+
+  (+ other Uint8Vec) => concat other
+
+  concat other Uint8Vec =
+    newLen = len + other.len
+    newPtr = Mem::alloc newLen
+    Mem::copy from:self to:newPtr len:len
+    Mem::copy from:other to:(newPtr + len) len:other.len
+    Uint8Vec newLen newPtr
+
+
+String = Uint8Vec
+
+s = "hello".slice 0 to: 4
+print ("hello" + "world")
+
 __stack_pointer = 0x10000 # 64KiB of stack space
 
 sp_get => !global.get __stack_pointer
@@ -122,9 +225,9 @@ if cond then: thenBody else: elseBody =>
 
 if cond then: body => if ~cond then: ~body else: ()
 
-if cond ..body => if ~cond then: ~body
+if cond body.. => if ~cond then: ~body
 
-unless cond ..body => if (not ~cond) ~body
+unless cond body.. => if (not ~cond) ~body
 
 for init:init cond:cond update:update body:body =>
   ~init
@@ -136,7 +239,7 @@ for init:init cond:cond update:update body:body =>
   !end
 
 
-for i from:start until:end ..body =>
+for i from:start until:end body.. =>
   for
     init:
       ~i = ~start
@@ -147,7 +250,7 @@ for i from:start until:end ..body =>
     body:
       ~body
 
-while cond ..body =>
+while cond body.. =>
   for
     init: ()
     cond: ~cond

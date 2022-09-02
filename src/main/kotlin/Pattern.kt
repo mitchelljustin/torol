@@ -25,7 +25,7 @@ open class Pattern(
         }
 
         data class Exact(val value: String) : Term() {
-            override fun toString() = "^$value"
+            override fun toString() = value
         }
 
         data class Label(val name: String) : Term() {
@@ -33,35 +33,35 @@ open class Pattern(
         }
 
         data class Vararg(val binding: String) : Term() {
-            override fun toString() = "..$binding"
+            override fun toString() = "$binding.."
         }
     }
 
 
-    class Definition(terms: List<Expr>) : Pattern(terms.mapIndexed { i, term ->
+    class Definition(terms: List<AST>) : Pattern(terms.mapIndexed { i, term ->
         when (term) {
-            is Expr.Multi -> {
-                if (term.body !is Expr.Ident)
+            is AST.Splat -> {
+                if (term.body !is AST.Ident)
                     throw PatternException("vararg must be an ident")
                 if (i != terms.lastIndex)
                     throw PatternException("vararg may only be the last term")
                 Term.Vararg(term.body.name)
             }
 
-            is Expr.Operator -> Term.Exact(term.operator.lexeme)
-            is Expr.Label -> Term.Label(term.name)
-            is Expr.Ident -> if (i == 0) Term.Exact(term.name) else Term.Any(term.name)
+            is AST.Operator -> Term.Exact(term.operator.lexeme)
+            is AST.Label -> Term.Label(term.name)
+            is AST.Ident, is AST.Path -> if (i == 0) Term.Exact(term.toString()) else Term.Any(term.toString())
             else -> throw PatternException("illegal definition pattern term: $term")
         }
     }) {
-        constructor(name: String) : this(listOf(Expr.Ident(name)))
+        constructor(name: String) : this(listOf(AST.Ident(name)))
 
         fun matchArgs(search: Search): Boolean = when {
             hasVararg -> search.args.isNotEmpty() && nonVarargs == search.args.take(nonVarargs.size)
             else -> args == search.args
         }
 
-        fun bind(exprs: List<Expr>): Map<String, Expr> {
+        fun bind(exprs: List<AST>): Map<String, AST> {
             val realArgs = exprs.drop(1)
             val binding = nonVarargs
                 .zip(realArgs)
@@ -71,7 +71,7 @@ open class Pattern(
             if (hasVararg) {
                 val vararg = args.last() as Term.Vararg
                 val realVarargs = realArgs.drop(nonVarargs.size)
-                binding[vararg.binding] = Expr.Sequence(realVarargs)
+                binding[vararg.binding] = AST.Sequence(realVarargs)
             }
 
             return binding
@@ -80,15 +80,15 @@ open class Pattern(
 
     }
 
-    class Search(terms: List<Expr>) : Pattern(terms.mapIndexed { i, term ->
+    class Search(terms: List<AST>) : Pattern(terms.mapIndexed { i, term ->
         when (term) {
-            is Expr.Operator -> Term.Exact(term.operator.lexeme)
-            is Expr.Label -> Term.Label(term.name)
-            is Expr.Ident -> if (i == 0) Term.Exact(term.name) else Term.Any(null)
+            is AST.Operator -> Term.Exact(term.operator.lexeme)
+            is AST.Label -> Term.Label(term.name)
+            is AST.Ident, is AST.Path -> if (i == 0) Term.Exact(term.toString()) else Term.Any(null)
             else -> Term.Any(null)
         }
     }) {
-        constructor(name: String) : this(listOf(Expr.Ident(name)))
+        constructor(name: String) : this(listOf(AST.Ident(name)))
     }
 
 
