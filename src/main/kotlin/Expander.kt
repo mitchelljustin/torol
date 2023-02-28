@@ -1,6 +1,7 @@
 import AST.Sexp
 import Assembly.id
 import Assembly.literal
+import Definitions.FileSuffix
 import Token.Type.EQUAL
 import Token.Type.EQUAL_GREATER
 import java.io.File
@@ -128,8 +129,8 @@ class Expander {
         val arg = expr.args.first()
         if (arg !is AST.Literal || arg.literal !is String)
             throw MacroException("expandInclude", "include arg must be a string", expr)
-        val module = arg.literal.removeSuffix(".catac")
-        val source = File("$module.catac").readText()
+        val module = arg.literal.removeSuffix(FileSuffix)
+        val source = File("$module$FileSuffix").readText()
         val program = Parser.parse(source)
         return expand(program)
     }

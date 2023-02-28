@@ -50,14 +50,14 @@ class Parser(
 
     private fun program(): AST.Sequence {
         entering("program")
-        val exprs = ArrayList<AST>()
+        val stmts = ArrayList<AST>()
         consumeLineTerminators("before program")
         while (!present(EOF)) {
             consumeLineTerminators("before statement in program")
-            exprs.add(statement())
+            stmts.add(statement())
             consumeLineTerminators("after statement in program")
         }
-        val expr = AST.Sequence(exprs, topLevel = true)
+        val expr = AST.Sequence(stmts, topLevel = true)
         returning("program", expr)
         return expr
     }
@@ -102,8 +102,8 @@ class Parser(
         }
         val terms = when (head) {
             is AST.Phrase -> head.terms
-            is AST.Ident -> listOf(head)
-            else -> throw error("lateEval glue-up", "head expr must be a phrase or ident")
+            is AST.Ident, is AST.Path, is AST.Access -> listOf(head)
+            else -> throw error("lateEval glue-up", "head expr must be a phrase or ident: $head")
         }.toMutableList()
         val tail = exprs.drop(1)
         terms += tail.flatMap { expr ->
@@ -204,24 +204,6 @@ class Parser(
 
     }
 
-    private fun unpackSequence(sequence: AST.Sequence): List<AST> {
-        report("unpacking sequence: '$sequence'")
-        val terms = sequence.stmts.flatMap { stmt ->
-            when {
-                stmt is AST.Phrase && stmt.target is AST.Label -> {
-                    if (stmt.terms.size != 2) throw error(
-                        "label phrase",
-                        "must have exactly one statement"
-                    )
-                    stmt.terms
-                }
-
-                else -> listOf(stmt)
-            }
-        }
-        return terms
-    }
-
     private fun splat(): AST {
         entering("splat")
         var expr = unaryHigh()
@@ -234,18 +216,35 @@ class Parser(
     private fun unaryHigh(): AST {
         entering("unaryHigh")
         val expr = when {
-            present(AMPERSAND) -> unaryRef()
+            present(AMPERSAND) -> reference()
             present(TILDE) -> unquote()
-            else -> primary()
+            else -> access()
         }
         returning("unaryHigh", expr)
+        return expr
+    }
+
+    private fun reference(): AST {
+        entering("reference")
+        consume(AMPERSAND, where = "in reference")
+        val expr = AST.Reference(primary())
+        returning("reference", expr)
+        return expr
+    }
+
+    private fun access(): AST {
+        entering("access")
+        var expr = primary()
+        while (consumeMaybe(DOT, where = "access operator"))
+            expr = AST.Access(expr, primary())
+        returning("access", expr)
         return expr
     }
 
     private fun primary(): AST {
         entering("primary")
         val expr = when {
-            present(IDENT) || present(DOT) -> access()
+            present(IDENT) -> ident()
             present(NOMEN) || present(COLON_COLON) -> path()
             present(Literals) -> literal()
             present(LPAREN) -> grouping()
@@ -266,43 +265,21 @@ class Parser(
         return expr
     }
 
-    private fun unaryRef(): AST {
-        entering("unaryRef")
-        consume(AMPERSAND, where = "in unaryRef")
-        val expr = AST.Unary(AST.Operator(prevToken), primary())
-        returning("unaryRef", expr)
-        return expr
-    }
-
     private fun path(): AST {
-        val path = segmented(::pathSegment, AST::Path, COLON_COLON)
-        if (path is AST.Nomen)
-            return path
-        if (path !is AST.Path)
-            throw error("nomenOrPath", "huh??")
-        val illegalSegments = path.segments.dropLast(1).filterIsInstance<AST.Ident>()
+        entering("path")
+        val prefixed = consumeMaybe(COLON_COLON, where = "path (prefixed separator)")
+        val segments = arrayListOf(pathSegment())
+        while (consumeMaybe(COLON_COLON, where = "path separator"))
+            segments.add(pathSegment())
+        val illegalSegments = segments.dropLast(1).filterIsInstance<AST.Ident>()
         if (illegalSegments.isNotEmpty())
             throw error(
-                "nomenOrPath",
+                "path",
                 "illegal ident path segments, only last may be ident: ${illegalSegments.joinToString(", ")}"
             )
+        val path = AST.Path(segments, prefixed)
+        returning("path", path)
         return path
-    }
-
-    private fun access() = segmented(::ident, AST::Access, DOT)
-
-    private fun segmented(segment: () -> AST, combinator: (List<AST>, Boolean) -> AST, separator: Token.Type): AST {
-        entering("segmented")
-        val prefixed = consumeMaybe(separator, where = "segmented (prefixed separator)")
-        val segments = arrayListOf(segment())
-        while (consumeMaybe(separator, where = "segmented $segment"))
-            segments.add(segment())
-        val expr = when {
-            segments.size > 1 || prefixed -> combinator(segments, prefixed)
-            else -> segments.first()
-        }
-        returning("segmented", expr)
-        return expr
     }
 
     private fun unquote(): AST.Unquote {
@@ -364,21 +341,23 @@ class Parser(
     private fun literal() =
         AST.Literal(consume(Literals, where = "in literal").value!!)
 
-    private fun ident(): AST.Ident {
-        return AST.Ident(consume(IDENT, where = "in ident").lexeme)
-    }
+    private fun ident(): AST.Ident = AST.Ident(consume(IDENT, where = "in ident").lexeme)
+
+    private fun nomen(): AST.Nomen = AST.Nomen(consume(NOMEN, where = "nomen").lexeme)
+
 
     private fun pathSegment(): AST {
         entering("pathSegment")
         val segment = when {
-            present(IDENT) -> AST.Ident(consume(IDENT, where = "pathComponent").lexeme)
-            present(NOMEN) -> AST.Nomen(consume(NOMEN, where = "pathComponent").lexeme)
+            present(IDENT) -> ident()
+            present(NOMEN) -> nomen()
             present(TILDE) -> unquote()
-            else -> throw error(where = "pathComponent", "path component may either be an ident or a nomen")
+            else -> throw error(where = "pathSegment", "path component may either be an ident or a nomen")
         }
         returning("pathSegment", segment)
         return segment
     }
+
 
     private var groupingNo = 0
     private fun sexp(): AST.Sexp {
@@ -405,9 +384,7 @@ class Parser(
             present(IDENT) -> when (val expr = access()) {
                 is AST.Ident -> AST.Sexp.Ident(expr.name)
                 is AST.Access -> {
-                    if (expr.prefixed)
-                        throw error(where = "in sexp", "sexp access cannot be dot-prefixed")
-                    AST.Sexp.Access(expr.segments.map { AST.Sexp.Ident((it as AST.Ident).name) })
+                    AST.Sexp.Access((expr.target as AST.Ident).toSexp(), (expr.member as AST.Ident).toSexp())
                 }
 
                 else -> throw error(where = "in sexp", "illegal access: '$expr'")
@@ -428,6 +405,25 @@ class Parser(
     }
 
     // --- Utility functions ---
+
+
+    private fun unpackSequence(sequence: AST.Sequence): List<AST> {
+        report("unpacking sequence: '$sequence'")
+        val terms = sequence.stmts.flatMap { stmt ->
+            when {
+                stmt is AST.Phrase && stmt.target is AST.Label -> {
+                    if (stmt.terms.size != 2) throw error(
+                        "label phrase",
+                        "must have exactly one statement"
+                    )
+                    stmt.terms
+                }
+
+                else -> listOf(stmt)
+            }
+        }
+        return terms
+    }
 
     private fun report(msg: String) {
         derivation.append("${stepNo.toString().padStart(5, ' ')} -- $msg\n")

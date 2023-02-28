@@ -1,0 +1,122 @@
+self = !local.get $self
+
+Compiler =
+  ::UseForIntegerLiteral = ()
+  ::UseForStringLiteral = ()
+
+Operand = Trait
+  ::op_load = ()
+  ::op_store = ()
+
+Struct = Trait
+  # filled in by compiler
+  Sized
+  Operand
+
+
+Any = Trait
+
+Int =
+  Compiler::UseForIntegerLiteral
+
+  Sized::size_of = 4
+
+  Operand
+    ::op_load = !i32.load
+    ::op_store = !i32.store
+
+  (+ other Int) =
+    !local.get $self
+    other
+    !i32.add
+
+  (* other Int) =
+    !local.get $self
+    other
+    !i32.mul
+
+Int32 = Alias Int
+
+Sized = Trait
+  ::size_of = Int
+
+From T Any = Trait
+  ::from value T = Self
+
+Uint8 =
+  Sized::size_of = 1
+
+  Operand
+    ::load = !i32.load8_u
+    ::store = !i32.store8
+
+  (From Int)::from value =
+
+Referable = Trait
+  Operand
+  Sized
+
+__heap_ptr = 0x70000
+
+Mem =
+  ::alloc T Any size Int = Ptr T
+    ptr = __heap_ptr
+    __heap_ptr -= size
+    (Ptr T)::from ptr
+
+Ptr
+  T Referable
+=
+  Alias Int
+
+  .read = T
+    self
+    T::op_load
+
+  .write value T =
+    self
+    value
+    T::op_store
+
+  .offset n Int =
+    (self + (n * T::size_of))
+
+  ::null = Self 0
+
+Vec
+  T Referable
+=
+  Struct
+    ptr Ptr T
+    len Int
+
+  ::new =
+    Self::new
+      ptr: (Ptr T)::null
+      len: 0
+
+  .at i Int = T
+    cell = ptr.offset i
+    cell.read
+
+
+String =
+  Compiler::UseForStringLiteral
+
+  Struct
+    vec Vec Uint8
+
+  Stringable.to_s = self
+
+
+Stringable =
+  Trait
+    .to_s = String
+
+Person =
+  Struct
+    id Int
+    name String
+
+  Stringable.to_s = "$name - $id"
+

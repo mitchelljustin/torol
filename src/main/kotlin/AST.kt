@@ -45,10 +45,16 @@ open class AST {
                 is Phrase -> visit(Phrase(expr.terms.map(::recurse)))
                 is Grouping -> visit(Grouping(recurse(expr.body)))
                 is Path -> visit(Path(expr.segments.map(::recurse), prefixed = expr.prefixed))
-                is Access -> visit(Access(expr.segments.map(::recurse), prefixed = expr.prefixed))
+                is Access -> visit(Access(recurse(expr.target), recurse(expr.member)))
                 is Unquote -> visit(Unquote(recurse(expr.body)))
                 is Sexp.List -> visit(Sexp.List(expr.terms.map { recurse(it) as Sexp }, parens = expr.parens))
-                is Sexp.Access -> visit(Sexp.Access(expr.segments.map { recurse(it) as Sexp.Ident }))
+                is Sexp.Access -> visit(
+                    Sexp.Access(
+                        recurse(expr.target) as Sexp.Ident,
+                        recurse(expr.member) as Sexp.Ident
+                    )
+                )
+
                 else -> throw Exception("unsupported expr for transform(): '$expr'")
             }
         }
@@ -65,8 +71,14 @@ open class AST {
         override fun toString() = "$body.."
     }
 
+    data class Reference(val body: AST) : AST() {
+        override fun toString() = "&$body"
+    }
+
     data class Ident(val name: String) : AST() {
         override fun toString() = name
+
+        fun toSexp() = Sexp.Ident(name)
     }
 
     data class Nomen(val name: String) : AST() {
@@ -101,7 +113,7 @@ open class AST {
     data class Assignment(val target: AST, val operator: Operator, val value: AST) : AST() {
         override val returns = false
         val terms get() = listOf(operator, target, value)
-        override fun toString() = "$target $operator $value"
+        override fun toString() = "‹$target $operator $value›"
     }
 
     data class Binary(val lhs: AST, val operator: Operator, val rhs: AST) : AST() {
@@ -131,14 +143,8 @@ open class AST {
         override fun toString() = "($body)"
     }
 
-    data class Access(val segments: List<AST>, val prefixed: Boolean) : AST() {
-        override fun toString(): String {
-            val inner = segments.joinToString(".")
-            return when (prefixed) {
-                true -> ".$inner"
-                false -> inner
-            }
-        }
+    data class Access(val target: AST, val member: AST) : AST() {
+        override fun toString() = "‹$target.$member›"
     }
 
     data class Path(val segments: List<AST>, val prefixed: Boolean) : AST() {
@@ -216,8 +222,8 @@ open class AST {
 
         }
 
-        data class Access(val segments: kotlin.collections.List<Ident>) : Sexp() {
-            override fun render() = segments.joinToString(".")
+        data class Access(val target: Ident, val member: Ident) : Sexp() {
+            override fun render() = "$target.$member"
 
             override fun toString() = render()
         }

@@ -1,2 +1,2 @@
-rootProject.name = "catac"
+rootProject.name = "torol"
 
